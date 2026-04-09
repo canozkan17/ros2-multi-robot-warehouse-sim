@@ -1,1 +1,0 @@
-/home/canozkan/thesis_ws/src/warehouse_multi_robot/launch/multi_robot.launch.py
