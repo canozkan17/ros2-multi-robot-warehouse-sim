@@ -1,0 +1,17 @@
+# Python virtual environment
+.venv/
+
+# VSCode settings
+.vscode/
+
+# ROS2 build artifacts 
+build/
+install/
+log/
+
+# Datasets
+cardbox_dataset/ 
+
+# Files
+src/warehouse_multi_robot
+
