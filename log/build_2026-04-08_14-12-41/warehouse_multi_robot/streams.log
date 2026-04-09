@@ -1,0 +1,15 @@
+[0.840s] Invoking command in '/home/canozkan/thesis_ws/build/warehouse_multi_robot': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/canozkan/thesis_ws/build/warehouse_multi_robot/prefix_override:/home/canozkan/Capstone_Project/venv/lib/python3.12/site-packages/colcon_core/task/python/colcon_distutils_commands:/home/canozkan/thesis_ws/install/warehouse_multi_robot/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/canozkan/thesis_ws/build/warehouse_multi_robot/build --no-deps symlink_data
+[1.033s] running develop
+[1.153s] running egg_info
+[1.164s] writing warehouse_multi_robot.egg-info/PKG-INFO
+[1.165s] writing dependency_links to warehouse_multi_robot.egg-info/dependency_links.txt
+[1.165s] writing requirements to warehouse_multi_robot.egg-info/requires.txt
+[1.165s] writing top-level names to warehouse_multi_robot.egg-info/top_level.txt
+[1.189s] reading manifest file 'warehouse_multi_robot.egg-info/SOURCES.txt'
+[1.190s] writing manifest file 'warehouse_multi_robot.egg-info/SOURCES.txt'
+[1.202s] running build_ext
+[1.203s] Creating /home/canozkan/thesis_ws/install/warehouse_multi_robot/lib/python3.12/site-packages/warehouse-multi-robot.egg-link (link to .)
+[1.203s] 
+[1.203s] Installed /home/canozkan/thesis_ws/build/warehouse_multi_robot
+[1.203s] running symlink_data
+[1.238s] Invoked command in '/home/canozkan/thesis_ws/build/warehouse_multi_robot' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/canozkan/thesis_ws/build/warehouse_multi_robot/prefix_override:/home/canozkan/Capstone_Project/venv/lib/python3.12/site-packages/colcon_core/task/python/colcon_distutils_commands:/home/canozkan/thesis_ws/install/warehouse_multi_robot/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/canozkan/thesis_ws/build/warehouse_multi_robot/build --no-deps symlink_data

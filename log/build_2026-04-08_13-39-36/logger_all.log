@@ -1,0 +1,242 @@
+[0.303s] colcon DEBUG Command line arguments: ['/usr/bin/colcon', 'build', '--symlink-install', '--packages-select', 'aws-robomaker-small-warehouse-world']
+[0.303s] colcon DEBUG Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=True, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=16, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=['aws-robomaker-small-warehouse-world'], packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0x7762d934b650>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x7762d934b0b0>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x7762d934b0b0>>, mixin_verb=('build',))
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(colcon_meta) check parameters
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) check parameters
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) check parameters
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) check parameters
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(colcon_meta) discover
+[0.364s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) discover
+[0.364s] colcon.colcon_core.package_discovery INFO Crawling recursively for packages in '/home/canozkan/thesis_ws'
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ignore'
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ignore_ament_install'
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['colcon_pkg']
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'colcon_pkg'
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['colcon_meta']
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'colcon_meta'
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['ros']
+[0.364s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ros'
+[0.404s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['cmake', 'python']
+[0.404s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'cmake'
+[0.404s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'python'
+[0.404s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['python_setup_py']
+[0.404s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'python_setup_py'
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(build) by extensions ['ignore', 'ignore_ament_install']
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(build) by extension 'ignore'
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(build) ignored
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(install) by extensions ['ignore', 'ignore_ament_install']
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(install) by extension 'ignore'
+[0.405s] colcon.colcon_core.package_identification Level 1 _identify(install) ignored
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(log) by extensions ['ignore', 'ignore_ament_install']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(log) by extension 'ignore'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(log) ignored
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['ignore', 'ignore_ament_install']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'ignore'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'ignore_ament_install'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['colcon_pkg']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'colcon_pkg'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['colcon_meta']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'colcon_meta'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['ros']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'ros'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['cmake', 'python']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'cmake'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'python'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extensions ['python_setup_py']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src) by extension 'python_setup_py'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extensions ['ignore', 'ignore_ament_install']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extension 'ignore'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extension 'ignore_ament_install'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extensions ['colcon_pkg']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extension 'colcon_pkg'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extensions ['colcon_meta']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extension 'colcon_meta'
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extensions ['ros']
+[0.406s] colcon.colcon_core.package_identification Level 1 _identify(src/aws-robomaker-small-warehouse-world) by extension 'ros'
+[0.409s] colcon.colcon_core.package_identification DEBUG Package 'src/aws-robomaker-small-warehouse-world' with type 'ros.catkin' and name 'aws_robomaker_small_warehouse_world'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['ignore', 'ignore_ament_install']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'ignore'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'ignore_ament_install'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['colcon_pkg']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'colcon_pkg'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['colcon_meta']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'colcon_meta'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['ros']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'ros'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['cmake', 'python']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'cmake'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'python'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extensions ['python_setup_py']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset) by extension 'python_setup_py'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['ignore', 'ignore_ament_install']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'ignore'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'ignore_ament_install'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['colcon_pkg']
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'colcon_pkg'
+[0.409s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['colcon_meta']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'colcon_meta'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['ros']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'ros'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['cmake', 'python']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'cmake'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'python'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extensions ['python_setup_py']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test) by extension 'python_setup_py'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['ignore', 'ignore_ament_install']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'ignore'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'ignore_ament_install'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['colcon_pkg']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'colcon_pkg'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['colcon_meta']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'colcon_meta'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['ros']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'ros'
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['cmake', 'python']
+[0.410s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'cmake'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'python'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extensions ['python_setup_py']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/images) by extension 'python_setup_py'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['ignore', 'ignore_ament_install']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'ignore'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'ignore_ament_install'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['colcon_pkg']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'colcon_pkg'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['colcon_meta']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'colcon_meta'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['ros']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'ros'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['cmake', 'python']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'cmake'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'python'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extensions ['python_setup_py']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/test/labels) by extension 'python_setup_py'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['ignore', 'ignore_ament_install']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'ignore'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'ignore_ament_install'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['colcon_pkg']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'colcon_pkg'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['colcon_meta']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'colcon_meta'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['ros']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'ros'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['cmake', 'python']
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'cmake'
+[0.411s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'python'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extensions ['python_setup_py']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train) by extension 'python_setup_py'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['ignore', 'ignore_ament_install']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'ignore'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'ignore_ament_install'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['colcon_pkg']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'colcon_pkg'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['colcon_meta']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'colcon_meta'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['ros']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'ros'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['cmake', 'python']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'cmake'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'python'
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extensions ['python_setup_py']
+[0.412s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/images) by extension 'python_setup_py'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['ignore', 'ignore_ament_install']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'ignore'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'ignore_ament_install'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['colcon_pkg']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'colcon_pkg'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['colcon_meta']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'colcon_meta'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['ros']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'ros'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['cmake', 'python']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'cmake'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'python'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extensions ['python_setup_py']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/train/labels) by extension 'python_setup_py'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['ignore', 'ignore_ament_install']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'ignore'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'ignore_ament_install'
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['colcon_pkg']
+[0.413s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'colcon_pkg'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['colcon_meta']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'colcon_meta'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['ros']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'ros'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['cmake', 'python']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'cmake'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'python'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extensions ['python_setup_py']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid) by extension 'python_setup_py'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['ignore', 'ignore_ament_install']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'ignore'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'ignore_ament_install'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['colcon_pkg']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'colcon_pkg'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['colcon_meta']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'colcon_meta'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['ros']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'ros'
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['cmake', 'python']
+[0.414s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'cmake'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'python'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extensions ['python_setup_py']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/images) by extension 'python_setup_py'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['ignore', 'ignore_ament_install']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'ignore'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'ignore_ament_install'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['colcon_pkg']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'colcon_pkg'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['colcon_meta']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'colcon_meta'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['ros']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'ros'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['cmake', 'python']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'cmake'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'python'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extensions ['python_setup_py']
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/cardbox_dataset/valid/labels) by extension 'python_setup_py'
+[0.415s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extensions ['ignore', 'ignore_ament_install']
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extension 'ignore'
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extension 'ignore_ament_install'
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extensions ['colcon_pkg']
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extension 'colcon_pkg'
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extensions ['colcon_meta']
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extension 'colcon_meta'
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extensions ['ros']
+[0.416s] colcon.colcon_core.package_identification Level 1 _identify(src/warehouse_multi_robot) by extension 'ros'
+[0.416s] colcon.colcon_core.package_identification DEBUG Package 'src/warehouse_multi_robot' with type 'ros.ament_python' and name 'warehouse_multi_robot'
+[0.416s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) using defaults
+[0.416s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) discover
+[0.416s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) using defaults
+[0.416s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) discover
+[0.416s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) using defaults
+[0.417s] colcon.colcon_core.package_selection WARNING ignoring unknown package 'aws-robomaker-small-warehouse-world' in --packages-select
+[0.434s] colcon.colcon_core.package_selection INFO Skipping not selected package 'aws_robomaker_small_warehouse_world' in 'src/aws-robomaker-small-warehouse-world'
+[0.434s] colcon.colcon_core.package_selection INFO Skipping not selected package 'warehouse_multi_robot' in 'src/warehouse_multi_robot'
+[0.435s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) check parameters
+[0.435s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) discover
+[0.439s] colcon.colcon_installed_package_information.package_discovery DEBUG Found 1 installed packages in /home/canozkan/thesis_ws/install
+[0.440s] colcon.colcon_installed_package_information.package_discovery DEBUG Found 1 installed packages in /home/canozkan/Capstone_Project/install
+[0.442s] colcon.colcon_installed_package_information.package_discovery DEBUG Found 397 installed packages in /opt/ros/jazzy
+[0.442s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) using defaults
+[0.584s] colcon.colcon_core.executor INFO Executing jobs using 'parallel' executor
+[0.586s] colcon.colcon_parallel_executor.executor.parallel DEBUG run_until_complete
+[0.586s] colcon.colcon_parallel_executor.executor.parallel DEBUG closing loop
+[0.586s] colcon.colcon_parallel_executor.executor.parallel DEBUG loop closed
+[0.586s] colcon.colcon_parallel_executor.executor.parallel DEBUG run_until_complete finished with '0'
+[0.587s] colcon.colcon_core.event_reactor DEBUG joining thread
+[0.599s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[0.599s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[0.599s] colcon.colcon_notification.desktop_notification INFO Sending desktop notification using 'notify2'
+[0.602s] colcon.colcon_notification.desktop_notification.notify2 DEBUG Failed to initialize notify2: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.Notifications was not provided by any .service files
+[0.602s] colcon.colcon_core.event_reactor DEBUG joined thread
+[0.608s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.608s] colcon.colcon_core.shell INFO Creating prefix script '/home/canozkan/thesis_ws/install/local_setup.ps1'
+[0.610s] colcon.colcon_core.shell INFO Creating prefix util module '/home/canozkan/thesis_ws/install/_local_setup_util_ps1.py'
+[0.611s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/canozkan/thesis_ws/install/setup.ps1'
+[0.612s] colcon.colcon_core.shell INFO Creating prefix script '/home/canozkan/thesis_ws/install/local_setup.sh'
+[0.613s] colcon.colcon_core.shell INFO Creating prefix util module '/home/canozkan/thesis_ws/install/_local_setup_util_sh.py'
+[0.614s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/canozkan/thesis_ws/install/setup.sh'
+[0.615s] colcon.colcon_core.shell INFO Creating prefix script '/home/canozkan/thesis_ws/install/local_setup.bash'
+[0.615s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/canozkan/thesis_ws/install/setup.bash'
+[0.616s] colcon.colcon_core.shell INFO Creating prefix script '/home/canozkan/thesis_ws/install/local_setup.zsh'
+[0.617s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/canozkan/thesis_ws/install/setup.zsh'

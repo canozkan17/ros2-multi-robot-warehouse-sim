@@ -1,0 +1,18 @@
+running develop
+running egg_info
+creating warehouse_multi_robot.egg-info
+writing warehouse_multi_robot.egg-info/PKG-INFO
+writing dependency_links to warehouse_multi_robot.egg-info/dependency_links.txt
+writing requirements to warehouse_multi_robot.egg-info/requires.txt
+writing top-level names to warehouse_multi_robot.egg-info/top_level.txt
+writing manifest file 'warehouse_multi_robot.egg-info/SOURCES.txt'
+reading manifest file 'warehouse_multi_robot.egg-info/SOURCES.txt'
+writing manifest file 'warehouse_multi_robot.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/canozkan/thesis_ws/install/warehouse_multi_robot/lib/python3.12/site-packages/warehouse-multi-robot.egg-link (link to .)
+
+Installed /home/canozkan/thesis_ws/build/warehouse_multi_robot
+running symlink_data
+creating /home/canozkan/thesis_ws/install/warehouse_multi_robot/share/ament_index/resource_index/packages
+symbolically linking /home/canozkan/thesis_ws/build/warehouse_multi_robot/resource/warehouse_multi_robot -> /home/canozkan/thesis_ws/install/warehouse_multi_robot/share/ament_index/resource_index/packages
+symbolically linking /home/canozkan/thesis_ws/build/warehouse_multi_robot/package.xml -> /home/canozkan/thesis_ws/install/warehouse_multi_robot/share/warehouse_multi_robot
