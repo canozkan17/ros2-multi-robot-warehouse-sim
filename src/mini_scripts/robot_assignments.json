@@ -1,5 +1,5 @@
 {
-  "robot_1": [
+  "robot1": [
     {
       "shelf_id": "shelf_big_0",
       "pose": {
@@ -89,7 +89,7 @@
       }
     }
   ],
-  "robot_2": [
+  "robot2": [
     {
       "shelf_id": "shelf",
       "pose": {
@@ -168,7 +168,7 @@
       }
     }
   ],
-  "robot_3": [
+  "robot3": [
     {
       "shelf_id": "shelf_0",
       "pose": {

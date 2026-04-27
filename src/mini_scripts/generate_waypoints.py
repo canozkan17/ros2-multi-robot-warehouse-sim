@@ -22,9 +22,9 @@ for shelf in data['shelves']:
     })
 
 # waypoint distirubiton per robot/drone (3 robot, load-balanced)
-robot_waypoints = {f'robot_{i+1}': [] for i in range(3)}
+robot_waypoints = {f'robot{i+1}': [] for i in range(3)}
 for i, wp in enumerate(waypoints):
-    robot_id = f'robot_{(i % 3) + 1}'
+    robot_id = f'robot{(i % 3) + 1}'
     robot_waypoints[robot_id].append(wp)
 
 file_name = "robot_assignments.json"

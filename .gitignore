@@ -13,5 +13,8 @@ log/
 cardbox_dataset/ 
 
 # Files
-# src/warehouse_multi_robot
+thesis_progress_plan_execution.txt
+draft.txt
 
+#Scripts
+char_count.py
