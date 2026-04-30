@@ -26,6 +26,8 @@ setup(
     entry_points={
         'console_scripts': [
             'imu_relay = warehouse_multi_robot.imu_relay:main',
+            'initial_pose_pub = warehouse_multi_robot.initial_pose_publisher:main',
+            'waypoint_sender = warehouse_multi_robot.waypoint_sender:main',
         ],
     },
 )

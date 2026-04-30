@@ -34,13 +34,13 @@ def generate_launch_description():
     ).decode('utf-8')
 
     robots = [
-    {'name': 'robot1', 'x': '0.0', 'y':  '1.0',
-     'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot1.sdf'},
-    {'name': 'robot2', 'x': '0.0', 'y':  '0.0',
-     'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot2.sdf'},
-    {'name': 'robot3', 'x': '0.0', 'y': '-1.0',
-     'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot3.sdf'},
-]
+        {'name': 'robot1', 'x': '0.0', 'y':  '1.0',
+        'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot1.sdf'},
+        {'name': 'robot2', 'x': '0.0', 'y':  '0.0',
+        'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot2.sdf'},
+        {'name': 'robot3', 'x': '0.0', 'y': '-1.0',
+        'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot3.sdf'},
+    ]
 
     actions = [
         SetEnvironmentVariable('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'),
@@ -100,10 +100,10 @@ def generate_launch_description():
             parameters=[{
                 'robot_description': robot_desc,
                 'use_sim_time': True,
-                'frame_prefix': f'{name}/'   # ← BU SATIRI EKLE
+                'frame_prefix': f'{name}/'  
             }],
             output='screen')
-    ]))
+        ]))
 
         # TF relay
         actions.append(TimerAction(period=delay_spawn + 3.0, actions=[
@@ -185,5 +185,16 @@ def generate_launch_description():
                      output='screen'),
             ])
         ]))
+        actions.append(TimerAction(period=delay_nav2 + 8.0, actions=[
+        Node(package='warehouse_multi_robot',
+            executable='initial_pose_pub',
+            name=f'initial_pose_pub_{name}',
+            parameters=[{
+                'robot_name': name,
+                'x': float(robot['x']),
+                'y': float(robot['y']),
+            }],
+            output='screen')
+    ]))
 
     return LaunchDescription(actions)
