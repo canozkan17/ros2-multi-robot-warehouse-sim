@@ -1,15 +1,15 @@
 # Fdb version 4
-["bibtex thesis_proposal_can_ozkan"] 1777182536.34243 "thesis_proposal_can_ozkan.aux" "thesis_proposal_can_ozkan.bbl" "thesis_proposal_can_ozkan" 1777323617.28566 0
+["bibtex thesis_proposal_can_ozkan"] 1777182536.34243 "thesis_proposal_can_ozkan.aux" "thesis_proposal_can_ozkan.bbl" "thesis_proposal_can_ozkan" 1777324154.00078 0
   "./bibliography.bib" 1777048411.15777 3768 2ace79a70eda79e008fc1f7d772dc50c ""
   "/usr/share/texlive/texmf-dist/bibtex/bst/ieeetran/IEEEtran.bst" 1440712899 57748 7c8250ecf02814ce6ddc0cdbb63df1dd ""
-  "thesis_proposal_can_ozkan.aux" 1777323617.04336 7439 f6526814ac5ab693e0dd4a28ab5f9c01 "pdflatex"
+  "thesis_proposal_can_ozkan.aux" 1777324153.79868 7439 f6526814ac5ab693e0dd4a28ab5f9c01 "pdflatex"
   (generated)
   "thesis_proposal_can_ozkan.bbl"
   "thesis_proposal_can_ozkan.blg"
   (rewritten before read)
-["pdflatex"] 1777323616.37671 "/home/canozkan/thesis_ws/writing/Proposal/thesis_proposal_can_ozkan.tex" "thesis_proposal_can_ozkan.pdf" "thesis_proposal_can_ozkan" 1777323617.28582 0
+["pdflatex"] 1777324153.30181 "/home/canozkan/thesis_ws/writing/Proposal/thesis_proposal_can_ozkan.tex" "thesis_proposal_can_ozkan.pdf" "thesis_proposal_can_ozkan" 1777324154.00094 0
   "/etc/texmf/web2c/texmf.cnf" 1776885632.15259 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/canozkan/thesis_ws/writing/Proposal/thesis_proposal_can_ozkan.tex" 1777182619.46702 33982 917da0ef050d1e22684877625960e596 ""
+  "/home/canozkan/thesis_ws/writing/Proposal/thesis_proposal_can_ozkan.tex" 1777324153.06062 33902 c86b8d654e49c507401072a033e1df5f ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/adobe/times/ptmb7t.tfm" 1136768653 2172 fd0c924230362ff848a33632ed45dc23 ""
@@ -188,10 +188,10 @@
   "Figures/Project_Workflow.pdf" 1777182289.68478 54273 ba53614994dc3c1dcb0e2e16cfe33de1 ""
   "Figures/gantt_chart.pdf" 1777068256.43663 178966 6dcf977f3c389b4fa1b31e74a36964df ""
   "IEEEtran.cls" 1776886341.2855 281957 5b2e4fa15b0f7eabb840ebf67df4c0f7 ""
-  "thesis_proposal_can_ozkan.aux" 1777323617.04336 7439 f6526814ac5ab693e0dd4a28ab5f9c01 "pdflatex"
+  "thesis_proposal_can_ozkan.aux" 1777324153.79868 7439 f6526814ac5ab693e0dd4a28ab5f9c01 "pdflatex"
   "thesis_proposal_can_ozkan.bbl" 1777182536.40585 3625 cba99f320cc7c2947b0d51088af8652c "bibtex thesis_proposal_can_ozkan"
-  "thesis_proposal_can_ozkan.out" 1777323617.04336 4047 262989ecd4bcc52eb1281cab08269b7c "pdflatex"
-  "thesis_proposal_can_ozkan.tex" 1777182619.46702 33982 917da0ef050d1e22684877625960e596 ""
+  "thesis_proposal_can_ozkan.out" 1777324153.79868 4047 262989ecd4bcc52eb1281cab08269b7c "pdflatex"
+  "thesis_proposal_can_ozkan.tex" 1777324153.06062 33902 c86b8d654e49c507401072a033e1df5f ""
   (generated)
   "thesis_proposal_can_ozkan.aux"
   "thesis_proposal_can_ozkan.log"
