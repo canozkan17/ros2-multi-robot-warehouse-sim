@@ -4,6 +4,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String
 import json
 import os
 
@@ -15,6 +16,8 @@ class WaypointSender(Node):
         self.action_clients = {}
         self.action_results = {}
         
+        self.shelf_arrived_pub = self.create_publisher(String, '/shelf_arrived', 10)
+
         for robot in self.robots:
             self.action_clients[robot] = ActionClient(
                 self, NavigateToPose, f'/{robot}/navigate_to_pose'
@@ -79,6 +82,10 @@ class WaypointSender(Node):
     def result_callback(self, future, robot, waypoints, index):
         result = future.result()
         if result.status == 4:  # SUCCEEDED
+            wp = waypoints[index]
+            msg = String()
+            msg.data = f'{{"robot_id": "{robot}", "shelf_id": "shelf_{index}", "timestamp": "{self.get_clock().now().nanoseconds}"}}'
+            self.shelf_arrived_pub.publish(msg)
             self.get_logger().info(f'{robot} waypoint {index+1} COMPLETED')
             self.send_next_waypoint(robot, waypoints, index + 1)
         else:
