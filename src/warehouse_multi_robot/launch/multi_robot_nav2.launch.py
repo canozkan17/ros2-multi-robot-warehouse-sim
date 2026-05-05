@@ -42,6 +42,12 @@ def generate_launch_description():
         'sdf': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/models/turtlebot3_waffle/model_robot3.sdf'},
     ]
 
+    DRAIN_RATES = {
+        'robot1': 0.5,   # finishes ~200 seconds 
+        'robot2': 0.5,
+        'robot3': 0.5,
+    }
+
     actions = [
         SetEnvironmentVariable('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'),
         SetEnvironmentVariable('GALLIUM_DRIVER', 'd3d12'),
@@ -113,7 +119,7 @@ def generate_launch_description():
                  output='screen')
         ]))
 
-        # Static map->odom TF (başlangıç pozisyonu)
+        # Static map->odom TF 
         actions.append(TimerAction(period=delay_spawn + 3.0, actions=[
         Node(package='tf2_ros', executable='static_transform_publisher',
             name=f'map_odom_{name}',
@@ -123,7 +129,7 @@ def generate_launch_description():
             output='screen')
         ]))
 
-        # Nav2 nodes (lifecycle manager YOK - manuel aktive edilecek)
+        # Nav2 nodes 
         actions.append(TimerAction(period=delay_nav2, actions=[
             GroupAction(actions=[
                 PushRosNamespace(name),
@@ -185,6 +191,26 @@ def generate_launch_description():
                      output='screen'),
             ])
         ]))
+        
+        
+        # Battery Depletion
+        actions.append(
+            Node(
+                package='warehouse_multi_robot',
+                executable='battery_monitor',
+                name=f'battery_monitor_{name}',
+                namespace=robot,
+                parameters=[{
+                    'robot_name': name,
+                    'drain_rate': DRAIN_RATES[name],
+                    'fail_at': 0.0,     # 0.0 = fail at total depletion
+                    'start_at': 100.0,  # start %100 full
+                }],
+                output='screen',
+                emulate_tty=True,
+            )
+        )
+        
         actions.append(TimerAction(period=delay_nav2 + 8.0, actions=[
         Node(package='warehouse_multi_robot',
             executable='initial_pose_pub',

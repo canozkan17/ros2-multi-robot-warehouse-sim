@@ -21,7 +21,7 @@ for shelf in data['shelves']:
         }
     })
 
-# waypoint distirubiton per robot/drone (3 robot, load-balanced)
+# waypoint distirubiton per robot (3 robot, load-balanced)
 robot_waypoints = {f'robot{i+1}': [] for i in range(3)}
 for i, wp in enumerate(waypoints):
     robot_id = f'robot{(i % 3) + 1}'

@@ -23,7 +23,7 @@ class WaypointSender(Node):
                 self, NavigateToPose, f'/{robot}/navigate_to_pose'
             )
         
-        # robot_assignments.json'dan waypoint'leri oku
+        # read robot_assignments.json for waypoints
         assignments_path = os.path.expanduser(
             '~/thesis_ws/src/warehouse_multi_robot/config/robot_assignments.json'
         )
