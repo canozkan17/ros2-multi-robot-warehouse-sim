@@ -116,7 +116,6 @@ class BatteryMonitor(Node):
 
     
     # Status publisher
-    
     def _publish_status(self, status: str):
         msg = String()
         msg.data = status

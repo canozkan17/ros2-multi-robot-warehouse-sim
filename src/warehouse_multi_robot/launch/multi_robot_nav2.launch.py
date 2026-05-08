@@ -43,9 +43,9 @@ def generate_launch_description():
     ]
 
     DRAIN_RATES = {
-        'robot1': 0.5,   # finishes ~200 seconds 
-        'robot2': 0.5,
-        'robot3': 0.5,
+        'robot1': 0.01,   # finishes ~10000  seconds 
+        'robot2': 0.01,
+        'robot3': 0.01,
     }
 
     actions = [
@@ -192,14 +192,37 @@ def generate_launch_description():
             ])
         ]))
         
-        
+        # WaypointSender 
+        actions.append(TimerAction(period=delay_nav2 + 20.0, actions=[
+            Node(
+                package='warehouse_multi_robot',
+                executable='waypoint_sender',
+                name='waypoint_sender',
+                namespace=name,
+                parameters=[{'robot_name': name}],
+                output='screen'
+            )
+        ]))
+
+        # Agent Coordinator
+        actions.append(TimerAction(period=delay_nav2 + 20.0, actions=[
+            Node(
+                package='warehouse_multi_robot',
+                executable='agent_coordinator',
+                name='agent_coordinator',
+                namespace=name,
+                parameters=[{'robot_name': name}],
+                output='screen'
+            )
+        ]))
+
         # Battery Depletion
         actions.append(
             Node(
                 package='warehouse_multi_robot',
                 executable='battery_monitor',
                 name=f'battery_monitor_{name}',
-                namespace=robot,
+                namespace=name,
                 parameters=[{
                     'robot_name': name,
                     'drain_rate': DRAIN_RATES[name],

@@ -29,6 +29,7 @@ setup(
             'initial_pose_pub = warehouse_multi_robot.initial_pose_publisher:main',
             'waypoint_sender = warehouse_multi_robot.waypoint_sender:main',
             'battery_monitor = warehouse_multi_robot.battery_monitor:main',
+            'agent_coordinator = warehouse_multi_robot.agent_coordinator:main',
         ],
     },
 )
