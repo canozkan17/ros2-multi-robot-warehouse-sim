@@ -101,7 +101,7 @@ class WaypointSender(Node):
     def _try_start(self):
         if self._started:
             return
-        if not self.action_client.wait_for_server(timeout_sec=2.0):
+        if not self.action_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().warn(
                 f'[{self.robot_name} Nav2 action server is not yet ready...]')
             return
@@ -143,11 +143,15 @@ class WaypointSender(Node):
         goal.pose.header.stamp = self.get_clock().now().to_msg()
         goal.pose.pose.position.x = float(wp['x'])
         goal.pose.pose.position.y = float(wp['y'])
-        goal.pose.pose.orientation.w = 1.0
+        
+        # If quaternion is not present, default to looking forward
+        goal.pose.pose.orientation.z = float(wp.get('qz', 0.0))
+        goal.pose.pose.orientation.w = float(wp.get('qw', 1.0))
 
         self.get_logger().info(
-            f'[{self.robot_name}] -> waypoint: x={wp['x']}, y={wp['y']}'
-            f'(remaining: {len(self.remaining)}'
+            f"[{self.robot_name}] -> waypoint: {wp.get('shelf_id', '?')} x={wp['x']}, y={wp['y']} | "
+            f"yaw={goal.pose.pose.orientation.z},{goal.pose.pose.orientation.w} "
+            f"(remaining: {len(self.remaining)})"
         )
 
         future = self.action_client.send_goal_async(goal)

@@ -16,6 +16,11 @@ cardbox_dataset/
 thesis_progress_plan_execution.txt
 draft.txt
 writing/Thesis/System_Architecture_draft.txt
+diagnostic_log.txt
+nav2_logs.txt
+system_health_report.txt
 
 #Scripts
 char_count.py
+diagnosis.py
+system_health_check.py

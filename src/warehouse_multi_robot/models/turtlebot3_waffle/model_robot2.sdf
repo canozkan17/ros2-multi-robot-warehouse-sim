@@ -47,7 +47,7 @@
     <link name="imu_link">
       <sensor name="tb3_imu" type="imu">
         <always_on>true</always_on>
-        <update_rate>200</update_rate>
+        <update_rate>50</update_rate>
         <topic>robot2/imu</topic>
         <imu>
           <angular_velocity>
@@ -138,7 +138,7 @@
         <pose>-0.064 0 0.121 0 0 0</pose>
         <update_rate>10</update_rate>
         <topic>robot2/scan</topic>
-        <gz_frame_id>base_scan</gz_frame_id>
+        <gz_frame_id>robot2/base_scan</gz_frame_id>
         <lidar>
           <scan>
             <horizontal>
@@ -189,8 +189,8 @@
           <!-- This friction pamareter don't contain reliable data!! -->
           <friction>
             <ode>
-              <mu>100000.0</mu>
-              <mu2>100000.0</mu2>
+              <mu>1.0</mu>
+              <mu2>0.5</mu2>
               <fdir1>0 0 0</fdir1>
               <slip1>0.0</slip1>
               <slip2>0.0</slip2>
@@ -251,8 +251,8 @@
           <!-- This friction pamareter don't contain reliable data!! -->
           <friction>
             <ode>
-              <mu>100000.0</mu>
-              <mu2>100000.0</mu2>
+              <mu>1.0</mu>
+              <mu2>0.5</mu2>
               <fdir1>0 0 0</fdir1>
               <slip1>0.0</slip1>
               <slip2>0.0</slip2>
@@ -306,6 +306,15 @@
           </sphere>
         </geometry>
         <surface>
+          <friction>
+            <ode>
+              <mu>0.0</mu>
+              <mu2>0.0</mu2>
+              <fdir1>0 0 0</fdir1>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+          </friction>
           <contact>
             <ode>
               <soft_cfm>0</soft_cfm>
@@ -340,6 +349,15 @@
           </sphere>
         </geometry>
         <surface>
+          <friction>
+            <ode>
+              <mu>0.0</mu>
+              <mu2>0.0</mu2>
+              <fdir1>0 0 0</fdir1>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+          </friction>
           <contact>
             <ode>
               <soft_cfm>0</soft_cfm>
@@ -483,9 +501,7 @@
       <left_joint>wheel_left_joint</left_joint>
       <right_joint>wheel_right_joint</right_joint>
 
-      <!-- kinematics -->
-      <!-- Slightly increased to reduce simulated odom yaw over-rotation drift. -->
-      <wheel_separation>0.292</wheel_separation>
+      <wheel_separation>0.287</wheel_separation>
       <wheel_radius>0.033</wheel_radius>
 
       <!-- limits -->
@@ -496,7 +512,7 @@
       <odom_topic>robot2/odom</odom_topic>
       <frame_id>robot2/odom</frame_id>
       <child_frame_id>robot2/base_footprint</child_frame_id>
-      <odom_publisher_frequency>30</odom_publisher_frequency>
+      <odom_publisher_frequency>50</odom_publisher_frequency>
 
       <tf_topic>/robot2/tf</tf_topic>
 
