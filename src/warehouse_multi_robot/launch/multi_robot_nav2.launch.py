@@ -49,6 +49,7 @@ def generate_launch_description():
     tb3_gazebo  = get_package_share_directory('turtlebot3_gazebo')
     ros_gz_sim  = get_package_share_directory('ros_gz_sim')
     tb3_desc    = get_package_share_directory('turtlebot3_description')
+    nav2_bt_dir = get_package_share_directory('nav2_bt_navigator')
 
     bridge_yamls = {
         'robot1': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/bridge_robot1.yaml',
@@ -64,6 +65,11 @@ def generate_launch_description():
     world_path  = '/home/canozkan/thesis_ws/src/warehouse_multi_robot/worlds/tugbot_warehouse_clean.sdf'
     fuel_path   = '/home/canozkan/.gz/fuel/fuel.gazebosim.org/openrobotics/worlds/tugbot in warehouse/2/'
     clock_yaml  = '/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/bridge_clock.yaml'
+    default_bt_xml = os.path.join(
+        nav2_bt_dir,
+        'behavior_trees',
+        'navigate_w_replanning_and_recovery.xml'
+    )
 
     xacro_file = os.path.join(tb3_desc, 'urdf', 'turtlebot3_waffle.urdf')
     
@@ -235,6 +241,7 @@ def generate_launch_description():
                         'global_frame':      'map',
                         'robot_base_frame':  f'{name}/base_link',
                         'odom_topic':        'odom',
+                        'default_bt_xml_filename': default_bt_xml,
                         'navigators': ['navigate_to_pose', 'navigate_through_poses'],
                         'navigate_to_pose':
                             {'plugin': 'nav2_bt_navigator::NavigateToPoseNavigator'},

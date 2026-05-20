@@ -19,6 +19,7 @@ writing/Thesis/System_Architecture_draft.txt
 diagnostic_log.txt
 nav2_logs.txt
 system_health_report.txt
+waypoint_verification.txt
 
 #Scripts
 char_count.py
