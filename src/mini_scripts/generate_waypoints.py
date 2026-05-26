@@ -17,24 +17,262 @@ Architecture
 7. Robot3 remaining traversal
 8. Export waypoint_sender.py compatible JSON
 
-Author
-------
-Can Ozkan Thesis Planner
+- With default parameters (robot_radius=0.27, inflation=0.35, safety=0.02):
+python3 generate_waypoints.py
+
+- With custom parameters:
+python3 generate_waypoints.py --robot-radius 0.27 --inflation 0.35 --safety 0.10
+
+- Geometry only, without a map (legacy behavior):
+python3 generate_waypoints.py --no-snap
 """
 
+import argparse
+import ast
 import xml.etree.ElementTree as ET
 import json
 import math
-from collections import defaultdict
+import os
+import sys
+from collections import defaultdict, deque
+
+try:
+    import numpy as np
+except ImportError:
+    print("ERROR: numpy required. pip install numpy --break-system-packages")
+    sys.exit(1)
 
 
 # PATHS
 SDF_PATH = "/home/canozkan/thesis_ws/src/warehouse_multi_robot/worlds/tugbot_warehouse_clean.sdf"
 OUTPUT_PATH = "/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/robot_assignments.json"
 
+# ──────────────────────────────────────────────────────────────────────
+# MAP LOADING & CLEARANCE
+# ──────────────────────────────────────────────────────────────────────
+
+def _load_map_yaml(path):
+    data = {}
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].split("#", 1)[0].rstrip("\n")
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            i += 1
+            continue
+        key, val = stripped.split(":", 1)
+        key, val = key.strip(), val.strip()
+        if val == "":
+            values = []
+            i += 1
+            while i < len(lines):
+                nl = lines[i].split("#", 1)[0].rstrip("\n")
+                if not nl.strip():
+                    i += 1
+                    continue
+                if not nl.startswith(" ") and not nl.startswith("\t"):
+                    break
+                item = nl.strip()
+                if item.startswith("-"):
+                    values.append(item[1:].strip())
+                    i += 1
+                    continue
+                break
+            data[key] = values
+            continue
+        data[key] = val
+        i += 1
+
+    def _parse(v):
+        if isinstance(v, list):
+            return [_parse(x) for x in v]
+        if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
+            return ast.literal_eval(v)
+        try:
+            return float(v) if ("." in v or "e" in v.lower()) else int(v)
+        except Exception:
+            return v
+
+    return {k: _parse(v) for k, v in data.items()}
+
+
+def _read_pgm(path):
+    with open(path, "rb") as f:
+        magic = f.readline().strip()
+        if magic not in (b"P5", b"P2"):
+            raise ValueError("Unsupported PGM")
+        tokens = []
+        while len(tokens) < 3:
+            line = f.readline()
+            if not line:
+                break
+            if line.startswith(b"#"):
+                continue
+            tokens.extend(line.split())
+        width, height, maxval = map(int, tokens[:3])
+        if magic == b"P5":
+            data = f.read(width * height)
+            img = np.frombuffer(data, dtype=np.uint8).reshape((height, width))
+        else:
+            raw = f.read().split()
+            img = np.array(list(map(int, raw[:width * height])), dtype=np.uint8).reshape((height, width))
+    return img, maxval
+
+
+def _load_image(path):
+    try:
+        from PIL import Image
+        return np.array(Image.open(path)), 255
+    except Exception:
+        return _read_pgm(path)
+
+
+def load_map(map_yaml_path):
+    """Returns (dist_cells, origin, res, img_height)"""
+    yml = _load_map_yaml(map_yaml_path)
+    img_path = yml.get("image")
+    if not img_path:
+        raise RuntimeError("map yaml missing 'image'")
+    if not os.path.isabs(img_path):
+        img_path = os.path.join(os.path.dirname(map_yaml_path), img_path)
+
+    res         = float(yml.get("resolution", 0.05))
+    origin_raw  = yml.get("origin", [0.0, 0.0, 0.0])
+    origin      = [float(x) for x in origin_raw]
+    occ_thresh  = float(yml.get("occupied_thresh", 0.65))
+    free_thresh = float(yml.get("free_thresh", 0.196))
+    negate      = int(yml.get("negate", 0))
+
+    img, maxval = _load_image(img_path)
+    if negate == 0:
+        prob = (maxval - img.astype(np.float32)) / float(maxval)
+    else:
+        prob = img.astype(np.float32) / float(maxval)
+
+    occ = prob > occ_thresh
+
+    # Euclidean distance transform (cells)
+    try:
+        from scipy.ndimage import distance_transform_edt
+        dist_cells = distance_transform_edt(~occ)
+    except ImportError:
+        # BFS fallback
+        h, w = occ.shape
+        dist_cells = np.full((h, w), np.inf, dtype=np.float32)
+        q = deque()
+        ys, xs = np.where(occ)
+        for y, x in zip(ys, xs):
+            dist_cells[y, x] = 0.0
+            q.append((y, x))
+        nbrs = [(1,0),(-1,0),(0,1),(0,-1)]
+        while q:
+            cy, cx = q.popleft()
+            base = dist_cells[cy, cx] + 1.0
+            for dy, dx in nbrs:
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < h and 0 <= nx < w and dist_cells[ny, nx] > base:
+                    dist_cells[ny, nx] = base
+                    q.append((ny, nx))
+
+    return dist_cells, origin, res, img.shape[0]
+
+
+def _world_to_grid(x, y, origin, res, height):
+    gx = int(math.floor((x - origin[0]) / res))
+    gy = int(math.floor((y - origin[1]) / res))
+    iy = (height - 1) - gy
+    return gx, iy
+
+# Approach direction vectors (move AWAY from shelf to clear obstacles)
+_APPROACH_DIR = {
+    'yminus': (0, -1),   # approaching from -y -> push further -y
+    'yplus':  (0,  1),
+    'xminus': (-1, 0),
+    'xplus':  ( 1, 0),
+}
+
+
+def snap_waypoint(wp, dist_cells, origin, res, height, min_clear_m, max_shift_m=3.0):
+    """
+    If waypoint clearance < min_clear_m, shift it along its approach
+    direction (away from shelf) in res-sized steps until clearance is met.
+    Includes lateral orthogonal tolerance to clear side walls/obstacles.
+    """
+    side = wp.get("side", "")
+    ddx, ddy = _APPROACH_DIR.get(side, (0, 0))
+    max_steps = int(math.ceil(max_shift_m / res))
+    h, w = dist_cells.shape
+
+    # 1. Determine the lateral direction orthogonal (perpendicular) to the approach direction
+    if ddx == 0:  # ​​Approaching along the Y direction (yminus/yplus) -> Lateral shift is along the X axis
+        orth_dx, orth_dy = 1.0, 0.0
+    else:         # Approaching along the X direction (xminus/xplus) -> Lateral shift is along the Y axis
+        orth_dx, orth_dy = 0.0, 1.0
+
+    # 2. List of lateral tolerances (in meters)
+    # First, try the exact center (0.0); if that fails, try shifting 5cm, 10cm, 15cm, and 20cm to the right and left, respectively.
+    lateral_offsets = [0.0, -0.05, 0.05, -0.10, 0.10, -0.15, 0.15, -0.20, 0.20]
+
+    for lat_offset in lateral_offsets:
+        # Apply the lateral tolerance to the starting point (e.g., if a wall is on the right, we will shift to the left)
+        start_x = wp["x"] + orth_dx * lat_offset
+        start_y = wp["y"] + orth_dy * lat_offset
+
+        x, y = start_x, start_y
+        for step in range(max_steps + 1):
+            gx, iy = _world_to_grid(x, y, origin, res, height)
+            if 0 <= gx < w and 0 <= iy < h:
+                # Check the safety of the map cell
+                if dist_cells[iy, gx] * res >= min_clear_m:
+                    shifted = step * res
+                    # Safe point. Return the coordinates, shifted laterally as well. 
+                    return round(x, 3), round(y, 3), shifted
+
+            # Advance in the direction of approach (along the line of retreat)
+            x += ddx * res
+            y += ddy * res
+
+    # If no lateral combination or vertical approach yielded a solution, return the original coordinates (signaling FAILED)
+    return round(wp["x"], 3), round(wp["y"], 3), -1.0
+
+
+def snap_all_waypoints(assignments, dist_cells, origin, res, height, min_clear_m):
+    """
+    Post-processes all waypoints in assignments dict in-place.
+    Prints a summary of how many were shifted and worst cases.
+    """
+    total = 0
+    shifted = 0
+    failed = 0
+    worst = []
+
+    for robot, wps in assignments.items():
+        for wp in wps:
+            total += 1
+            nx, ny, delta = snap_waypoint(wp, dist_cells, origin, res, height, min_clear_m)
+            if delta < 0:
+                failed += 1
+                worst.append((robot, wp.get("shelf_id", "?"), wp["x"], wp["y"], delta))
+            elif delta > 0:
+                shifted += 1
+                wp["x"] = nx
+                wp["y"] = ny
+
+    print(f"\n{'='*60}")
+    print(f"CLEARANCE SNAP SUMMARY  (min_clear={min_clear_m:.3f}m)")
+    print(f"  Total waypoints : {total}")
+    print(f"  Shifted         : {shifted}")
+    print(f"  FAILED (no room): {failed}")
+    if failed > 0:
+        print("  Failed waypoints (may need manual fix or larger APPROACH_DISTANCE):")
+        for r, sid, x, y, _ in worst:
+            print(f"    {r} | {sid} | x={x:.3f} y={y:.3f}")
+    print(f"{'='*60}")
 
 # CONFIG
-APPROACH_DISTANCE = 1.5
+APPROACH_DISTANCE = 1.2
 
 SMALL_SHELF_WIDTH = 3.6
 SMALL_SHELF_SECTIONS = ["A", "B", "C", "D"]
@@ -937,25 +1175,52 @@ def cleanup(assignments):
     return cleaned
 
 
+# ──────────────────────────────────────────────────────────────────────
 # MAIN
+# ──────────────────────────────────────────────────────────────────────
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Warehouse waypoint generator with map-based clearance snap"
+    )
+    parser.add_argument(
+        "--map-yaml",
+        default=os.path.expanduser(
+            "~/thesis_ws/src/warehouse_multi_robot/maps/warehouse_map.yaml"
+        ),
+        help="Path to Nav2 map YAML"
+    )
+    parser.add_argument(
+        "--robot-radius", type=float, default=0.27,
+        help="Robot inscribed radius in metres (default: 0.27)"
+    )
+    parser.add_argument(
+        "--inflation", type=float, default=0.35,
+        help="Nav2 inflation_radius in metres (default: 0.35)"
+    )
+    parser.add_argument(
+        "--safety", type=float, default=0.02,
+        help="Extra safety margin in metres (default: 0.02)"
+    )
+    parser.add_argument(
+        "--no-snap", action="store_true",
+        help="Skip map-based clearance snapping (dry-run geometry only)"
+    )
+    args = parser.parse_args()
+
+    min_clear_m = args.inflation + args.safety
+    print(f"\nMin required clearance: {args.inflation:.2f} + {args.safety:.2f} = {min_clear_m:.3f} m")
 
     print("\nParsing SDF...")
     grouped = parse_sdf()
     total = sum(len(v["wps"]) for v in grouped.values())
     print(f"Generated Waypoints: {total}")
+
     regions = build_regions(grouped)
     robot1, used1 = allocate_robot1(regions, grouped)
-    robot2, used2 = allocate_robot2(
-        regions,
-        grouped,
-        used1
-    )
-    robot3 = allocate_robot3(
-        grouped,
-        used1,
-        used2
-    )
+    robot2, used2 = allocate_robot2(regions, grouped, used1)
+    robot3 = allocate_robot3(grouped, used1, used2)
+
     assignments = {
         "robot1": robot1,
         "robot2": robot2,
@@ -964,14 +1229,26 @@ def main():
     validate(assignments)
     print_summary(assignments)
     print_route_details(assignments)
+
+    if not args.no_snap:
+        map_yaml = os.path.expanduser(args.map_yaml)
+        if not os.path.isfile(map_yaml):
+            print(f"\nWARN: map yaml not found at {map_yaml} — skipping snap.")
+            print("      Re-run with --map-yaml <path> or --no-snap.")
+        else:
+            print(f"\nLoading map: {map_yaml}")
+            dist_cells, origin, res, img_height = load_map(map_yaml)
+            print(f"Map loaded: res={res}m, origin={origin[:2]}, shape={dist_cells.shape}")
+            snap_all_waypoints(assignments, dist_cells, origin, res, img_height, min_clear_m)
+    else:
+        print("\n[--no-snap] Clearance check skipped.")
+
     cleaned = cleanup(assignments)
     with open(OUTPUT_PATH, "w") as f:
         json.dump(cleaned, f, indent=2)
 
-    print("\nSaved:")
-    print(OUTPUT_PATH)
+    print(f"\nSaved: {OUTPUT_PATH}")
     print("\nDONE.")
-
 
 
 if __name__ == "__main__":

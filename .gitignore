@@ -20,8 +20,20 @@ diagnostic_log.txt
 nav2_logs.txt
 system_health_report.txt
 waypoint_verification.txt
+waypoint_false_positives.txt
+waypoint_clearance_report.txt
+
 
 #Scripts
 char_count.py
 diagnosis.py
 system_health_check.py
+waypoint_clearance_report.py
+robot_tracker.py
+
+
+src/mini_scripts/__pycache__/waypoint_clearance_report.cpython-312.pyc
+src/mini_scripts/__pycache__/robot_tracker.cpython-312.pyc
+src/mini_scripts/robot3_debug_log.txt
+src/mini_scripts/robot2_debug_log.txt
+src/mini_scripts/robot1_debug_log.txt
