@@ -501,6 +501,7 @@
       <left_joint>wheel_left_joint</left_joint>
       <right_joint>wheel_right_joint</right_joint>
 
+      <!-- Match the calibrated generic model to reduce yaw over-rotation drift. -->
       <wheel_separation>0.287</wheel_separation>
       <wheel_radius>0.033</wheel_radius>
 

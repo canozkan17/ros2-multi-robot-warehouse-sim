@@ -171,20 +171,17 @@ def generate_launch_description():
             )
         ]))
 
-        # TF relay: Gazebo odom TF (/robotN/tf -> /tf) 
+        # Relay Gazebo's dynamic odom TF into the global TF tree.
+        # robot_state_publisher owns the static URDF tree on /tf_static,
+        # Gazebo owns /robotN/tf, and AMCL owns map->odom.
         actions.append(TimerAction(period=delay_spawn + 2.5, actions=[
-            Node(package='topic_tools', executable='relay',
-                 name=f'tf_relay_{name}',
-                 arguments=[f'/{name}/tf', '/tf'],
-                 output='screen')
-        ]))
-
-        # tf_static relay 
-        actions.append(TimerAction(period=delay_spawn + 2.5, actions=[
-            Node(package='topic_tools', executable='relay',
-                 name=f'tf_static_relay_{name}',
-                 arguments=[f'/{name}/tf_static', '/tf_static'],
-                 output='screen')
+            Node(
+                package='topic_tools',
+                executable='relay',
+                name=f'tf_relay_{name}',
+                arguments=[f'/{name}/tf', '/tf'],
+                output='screen',
+            )
         ]))
 
         # Nav2 stack 

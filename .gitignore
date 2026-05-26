@@ -37,3 +37,11 @@ src/mini_scripts/__pycache__/robot_tracker.cpython-312.pyc
 src/mini_scripts/robot3_debug_log.txt
 src/mini_scripts/robot2_debug_log.txt
 src/mini_scripts/robot1_debug_log.txt
+src/mini_scripts/analyze_bag.py
+src/mini_scripts/bag_to_csv.py
+src/mini_scripts/odom_cov_adjuster.py
+
+/run_compare/
+/run_final/
+waypoint_false_positives.txt
+waypoint_false_positives.txt

@@ -23,6 +23,8 @@ SDF_PATH = os.path.expanduser(
     "~/thesis_ws/src/warehouse_multi_robot/worlds/tugbot_warehouse_clean.sdf")
 
 APPROACH_DIST     = 1.2
+FINAL_GOAL_TOL    = 0.35
+SECTION_CENTER_TOL = 0.35
 SMALL_SHELF_WIDTH = 3.6
 SMALL_SECTIONS    = 4
 SMALL_STEP        = SMALL_SHELF_WIDTH / SMALL_SECTIONS   # 0.9 m
@@ -248,11 +250,13 @@ def _dir_match(direction, rx, ry, ix, iy, eps=1e-6):
         return ix < rx - eps
     return True
 
-def _remaining_sides(item, robot, override):
+def _remaining_sides(item, robot, override, deferred_keys=None):
     sides = []
     for side in item["sides"].values():
         key = side["key"]
         if key in item["done"]:
+            continue
+        if deferred_keys and f"{item['name']}:{key}" in deferred_keys:
             continue
         owner = ITEM_SIDE_OWNER.get(key)
         if owner and owner != robot and not override:
@@ -269,7 +273,7 @@ def _item_direction(item, cx, cy, priority_dirs):
 def _make_side_entry(item_name, side):
     return {"item_name": item_name, "side_key": side["key"], "side": side}
 
-def select_next(items, robot, cx, cy, regions, done, limit, priority_dirs, override=False):
+def select_next(items, robot, cx, cy, regions, done, limit, priority_dirs, override=False, deferred_keys=None):
     if done >= limit:
         return None, []
     for region in regions:
@@ -277,7 +281,7 @@ def select_next(items, robot, cx, cy, regions, done, limit, priority_dirs, overr
         for item in items.values():
             if item["region"] != region:
                 continue
-            remaining = _remaining_sides(item, robot, override)
+            remaining = _remaining_sides(item, robot, override, deferred_keys)
             if not remaining:
                 continue
             if item["type"] == "mobile_cluster":
@@ -338,6 +342,9 @@ class WaypointSender(Node):
         self._candidate_ok = []
         self._candidate_idx = 0
         self._item_side_queue = []
+        self._deferred_queue = []
+        self._deferred_keys = set()
+        self._awaiting_final_path = False
 
         self.face_yaw    = 0.0
         self.par_yaw     = 0.0
@@ -531,9 +538,30 @@ class WaypointSender(Node):
         ax, ay = self._final_goal
         nav_yaw = _travel_yaw(self.cur_x, self.cur_y, ax, ay)
         qz, qw = _yaw_to_quat(nav_yaw)
+
+        if _dist(self.cur_x, self.cur_y, ax, ay) <= FINAL_GOAL_TOL:
+            self._awaiting_final = True
+            self._send_final_goal(ax, ay, qz, qw, nav_yaw)
+            return
+
+        self._awaiting_final_path = True
+        goal = ComputePathToPose.Goal()
+        goal.start = self._make_pose_stamped(self.cur_x, self.cur_y, math.sin(self.cur_yaw / 2.0), math.cos(self.cur_yaw / 2.0))
+        goal.goal = self._make_pose_stamped(ax, ay, qz, qw)
+        goal.use_start = True
+        goal.planner_id = ""
+        fut = self.pc.send_goal_async(goal)
+        fut.add_done_callback(self._final_path_gr_cb)
+
+    def _send_final_goal(self, ax, ay, qz, qw, nav_yaw=None):
         goal = NavigateToPose.Goal()
         goal.pose = self._make_pose_stamped(ax, ay, qz, qw)
         self._awaiting_final = True
+        if nav_yaw is None:
+            try:
+                nav_yaw = 2.0 * math.atan2(qz, qw)
+            except Exception:
+                nav_yaw = 0.0
         # log exact final goal being sent (x, y, yaw) for external trackers
         try:
             self.get_logger().info(f"[{self.robot_name}] SENT_GOAL {ax:.3f} {ay:.3f} {nav_yaw:.3f}")
@@ -541,6 +569,40 @@ class WaypointSender(Node):
             pass
         fut = self.ac.send_goal_async(goal)
         fut.add_done_callback(self._gr_cb)
+
+    def _final_path_gr_cb(self, fut):
+        gh = fut.result()
+        if not gh.accepted:
+            self.get_logger().warn(f"[{self.robot_name}] final approach path rejected")
+            self._awaiting_final_path = False
+            if self._nav_queue:
+                self._next_nav()
+                return
+            self._defer_current_side()
+            return
+        gh.get_result_async().add_done_callback(self._final_path_res_cb)
+
+    def _final_path_res_cb(self, fut):
+        r = fut.result()
+        self._awaiting_final_path = False
+        result = r.result
+        reachable = (result.error_code == result.NONE) and (len(result.path.poses) > 0)
+        if not reachable:
+            self.get_logger().warn(f"[{self.robot_name}] final approach path blocked, try next candidate")
+            if self._nav_queue:
+                self._next_nav()
+                return
+            self._defer_current_side()
+            return
+
+        if self._final_goal is None:
+            self._continue_current_item_or_select_next()
+            return
+
+        ax, ay = self._final_goal
+        nav_yaw = _travel_yaw(self.cur_x, self.cur_y, ax, ay)
+        qz, qw = _yaw_to_quat(nav_yaw)
+        self._send_final_goal(ax, ay, qz, qw, nav_yaw)
 
     def _gr_cb(self, fut):
         gh = fut.result()
@@ -556,11 +618,8 @@ class WaypointSender(Node):
                 if self._nav_queue:
                     self._next_nav()
                     return
-            item = self.items.get(self.cur_item)
-            if item:
-                item["done"].add(self.cur_skey)
             self._nav_queue = []
-            self._continue_current_item_or_select_next()
+            self._defer_current_side()
             return
         self._gh = gh
         gh.get_result_async().add_done_callback(self._res_cb)
@@ -594,12 +653,9 @@ class WaypointSender(Node):
                 if self._nav_queue:
                     self._next_nav()
                     return
-            # no candidates left -> mark item done and select next
-            item = self.items.get(self.cur_item)
-            if item:
-                item["done"].add(self.cur_skey)
+            # no candidates left -> defer this side to the end of the queue
             self._nav_queue = []
-            self._continue_current_item_or_select_next()
+            self._defer_current_side()
 
     # ── sweep ─────────────────────────────────────────────────────────────────
 
@@ -626,6 +682,13 @@ class WaypointSender(Node):
             self.par_yaw = math.pi / 2.0 if s["step"] > 0.0 else -math.pi / 2.0
         else:
             self.par_yaw = math.atan2(2.0*s["qz"]*s["qw"], 1.0-2.0*s["qz"]*s["qz"])
+
+        if s.get("axis") == "section_line":
+            pts = s.get("section_points", [])
+            if pts:
+                nearest_idx = min(range(len(pts)), key=lambda i: _dist(self.cur_x, self.cur_y, pts[i][0], pts[i][1]))
+                if _dist(self.cur_x, self.cur_y, pts[nearest_idx][0], pts[nearest_idx][1]) <= SECTION_CENTER_TOL:
+                    self.cur_section = nearest_idx
         sec_label = _section_label(s, self.cur_section)
         self.get_logger().info(
             f"[{self.robot_name}] sweep {self.cur_skey} sec={sec_label} idx={self.cur_section} "
@@ -660,7 +723,8 @@ class WaypointSender(Node):
         if self._ftimer:
             self._ftimer.cancel()
             self._ftimer = None
-        if self.state != FACING: return
+        if self.state != FACING or self.cur_side is None:
+            return
         if self.cur_section >= self.cur_side["sections"] - 1:
             self._finish()
         else:
@@ -685,10 +749,19 @@ class WaypointSender(Node):
 
     def _advance(self):
         s = self.cur_side
+        if s is None:
+            return
         if self._adv_sx is None: self._on_parallel()
         traveled = _dist(self.cur_x, self.cur_y, self._adv_sx, self._adv_sy)
         target_dist = self._adv_target_dist if self._adv_target_dist is not None else abs(s["step"])
-        if traveled >= target_dist - 0.05:
+        reached_next_section = False
+        if s and s.get("axis") == "section_line":
+            pts = s.get("section_points", [])
+            nxt = self.cur_section + 1
+            if nxt < len(pts):
+                reached_next_section = _dist(self.cur_x, self.cur_y, pts[nxt][0], pts[nxt][1]) <= SECTION_CENTER_TOL
+
+        if traveled >= target_dist - 0.05 or reached_next_section:
             self._stop()
             self._adv_sx = self._adv_sy = None
             self._adv_target_dist = None
@@ -725,6 +798,45 @@ class WaypointSender(Node):
             return
         self._select()
 
+    def _defer_current_side(self):
+        if self.cur_item is None or self.cur_skey is None or self.cur_side is None:
+            self._continue_current_item_or_select_next()
+            return
+
+        deferred_key = f"{self.cur_item}:{self.cur_skey}"
+        if deferred_key not in self._deferred_keys:
+            self._deferred_keys.add(deferred_key)
+            self._deferred_queue.append({
+                "item_name": self.cur_item,
+                "side_key": self.cur_skey,
+                "side": dict(self.cur_side),
+                "deferred_key": deferred_key,
+            })
+            self.get_logger().warn(
+                f"[{self.robot_name}] deferred {self.cur_skey} to end of queue")
+
+        self._continue_current_item_or_select_next()
+
+    def _select_deferred(self):
+        while self._deferred_queue:
+            entry = self._deferred_queue.pop(0)
+            deferred_key = entry.get("deferred_key")
+            if deferred_key:
+                self._deferred_keys.discard(deferred_key)
+
+            side = entry.get("side")
+            if not side:
+                continue
+            if side.get("section_points_template"):
+                side = _prepare_section_line_side_for_pose(side, self.cur_x, self.cur_y)
+                entry["side_key"] = side["key"]
+
+            self.get_logger().info(
+                f"[{self.robot_name}] retry deferred {entry.get('side_key')} after normal queue")
+            self._go(entry["item_name"], entry["side_key"], side)
+            return True
+        return False
+
     # ── selection ─────────────────────────────────────────────────────────────
 
     def _select(self):
@@ -741,8 +853,10 @@ class WaypointSender(Node):
 
         iname, side_queue = select_next(
             self.items, self.robot_name, self.cur_x, self.cur_y,
-            self.owned, self.wp_done, self.wp_limit, self.priority_dirs, self.override)
+            self.owned, self.wp_done, self.wp_limit, self.priority_dirs, self.override, self._deferred_keys)
         if iname is None:
+            if self._select_deferred():
+                return
             self.get_logger().info(
                 f"[{self.robot_name}] All done ({self.wp_done}/{self.wp_limit})")
             return
@@ -759,6 +873,8 @@ class WaypointSender(Node):
 
     def _pub_arrived(self):
         s = self.cur_side
+        if s is None:
+            return
         ax, ay = s["approach_x"], s["approach_y"]
         if s.get("axis") == "section_line":
             pts = s.get("section_points", [])
