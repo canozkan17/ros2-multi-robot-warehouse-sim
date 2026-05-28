@@ -1,3 +1,0 @@
-=== WAYPOINT FALSE POSITIVES ===
-{"timestamp": 1779775860.8225715, "robot_id": "robot1", "shelf_id": "shelf_2_yplus", "target": [-6.706, 9.547], "actual": [-6.256, 9.494], "delta": [0.45, -0.053], "err": 0.453, "amcl_cov": [0.002078, 0.003136], "amcl_std": 0.056, "amcl_age": 0.03, "reasons": ["ERR=0.453m"]}
-{"timestamp": 1779775924.39345, "robot_id": "robot2", "shelf_id": "shelf_big_3_xplus", "target": [1.794, -15.215], "actual": [1.394, -14.914], "delta": [-0.4, 0.301], "err": 0.501, "amcl_cov": [0.002648, 0.00786], "amcl_std": 0.089, "amcl_age": 0.04, "reasons": ["ERR=0.501m"]}

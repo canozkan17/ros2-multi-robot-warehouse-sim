@@ -40,6 +40,13 @@ SWEEP_WAIT_SEC    = 2.0
 Q_X = (0.0, 1.0)        # yaw=0  robot faces +X  (yminus/yplus sides)
 Q_Y = (0.7071, 0.7071)  # yaw=90 robot faces +Y  (xminus/xplus sides)
 
+MODEL_ORIGIN_OFFSETS = {
+    "shelf": (-0.5, 0.0),
+    "shelf_big": (-0.5, 0.0),
+    "pallet": (0.0, 0.0),
+    "pallet_box_mobile": (0.0, 0.0),
+}
+
 ITEM_SIDE_OWNER = {
     "shelf_2_yplus":      "robot1", "shelf_2_yminus":     "robot3",
     "shelf_5_yminus":     "robot1", "shelf_5_yplus":      "robot2",
@@ -50,8 +57,8 @@ ROBOT_CONFIG = {
     "robot1": {"spawn": (0.0,  1.0), "first_item": "shelf_2",
                "first_side": "yplus",  "owned_regions": [2,1,4],
                "priority_dirs": ["north", "east"], "wp_limit": 48},
-    "robot2": {"spawn": (0.0,  0.0), "first_item": "shelf_big_3",
-               "first_side": "xminus", "owned_regions": [4,3],
+    "robot2": {"spawn": (0.0,  0.0), "first_item": "shelf_10",
+               "first_side": "yplus", "owned_regions": [4,3],
                "priority_dirs": ["east", "south"], "wp_limit": 47},
     "robot3": {"spawn": (0.0, -1.0), "first_item": "shelf_2",
                "first_side": "yminus", "owned_regions": [2,3],
@@ -186,6 +193,19 @@ def _section_label(side, idx):
         return labels[idx]
     return "?"
 
+def _apply_xy_offset(x, y, yaw, dx, dy):
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    return (
+        x + dx * cos_yaw - dy * sin_yaw,
+        y + dx * sin_yaw + dy * cos_yaw,
+    )
+
+def _model_center(item_type, x, y, yaw):
+    dx, dy = MODEL_ORIGIN_OFFSETS.get(item_type, (0.0, 0.0))
+    cx, cy = _apply_xy_offset(x, y, yaw, dx, dy)
+    return round(cx, 3), round(cy, 3)
+
 def parse_sdf(path):
     world = ET.parse(path).getroot().find("world")
     items = {}
@@ -198,13 +218,15 @@ def parse_sdf(path):
         if not t: continue
         v   = pe.text.strip().split()
         x, y, yaw = float(v[0]), float(v[1]), float(v[5])
-        if   t == "shelf":      sides = _small_shelf_sides(name, x, y)
-        elif t == "shelf_big":  sides = _big_shelf_sides(name, x, y, yaw)
-        else:                   sides = _pallet_sides(name, x, y)
-        items[name] = {"name": name, "type": t, "x": x, "y": y,
-                       "region": _region(x, y), "sides": sides, "done": set()}
+        cx, cy = _model_center(t, x, y, yaw)
+        if   t == "shelf":      sides = _small_shelf_sides(name, cx, cy)
+        elif t == "shelf_big":  sides = _big_shelf_sides(name, cx, cy, yaw)
+        else:                   sides = _pallet_sides(name, cx, cy)
+        items[name] = {"name": name, "type": t, "x": cx, "y": cy,
+                       "model_x": x, "model_y": y, "model_yaw": yaw,
+                       "region": _region(cx, cy), "sides": sides, "done": set()}
         if name in MOBILE_SET:
-            mobile_refs.append({"name": name, "x": x, "y": y})
+            mobile_refs.append({"name": name, "x": cx, "y": cy})
 
     if mobile_refs:
         cx = sum(m["x"] for m in mobile_refs) / len(mobile_refs)
@@ -325,6 +347,17 @@ class WaypointSender(Node):
         self.priority_dirs = cfg["priority_dirs"]
         self.wp_limit    = cfg["wp_limit"]
 
+        # Localization freshness thresholds (seconds, meters)
+        self.declare_parameter('max_amcl_age_sec', 5.0)
+        self.declare_parameter('max_amcl_pos_sigma', 0.5)
+        self.declare_parameter('require_amcl_age_gate', False)
+        self.declare_parameter('goal_reject_retry_sec', 0.8)
+        self.max_amcl_age_sec = float(self.get_parameter('max_amcl_age_sec').value)
+        self.max_amcl_pos_sigma = float(self.get_parameter('max_amcl_pos_sigma').value)
+        self.require_amcl_age_gate = bool(self.get_parameter('require_amcl_age_gate').value)
+        self.goal_reject_retry_sec = float(self.get_parameter('goal_reject_retry_sec').value)
+        self._fresh_timer = None
+
         self.items       = parse_sdf(SDF_PATH)
         self.state       = IDLE
         self.wp_done     = 0
@@ -386,6 +419,48 @@ class WaypointSender(Node):
         self.cur_y = msg.pose.pose.position.y
         self.cur_yaw = _yaw(msg)
 
+    def _localization_fresh(self):
+        """Return (fresh: bool, age: float, sigma: float).
+        Age is seconds since AMCL header stamp. Sigma is euclidean pos std.
+        """
+        if self.amcl is None:
+            return False, None, None
+        now_sec = float(self.get_clock().now().nanoseconds) * 1e-9
+        st = self.amcl.header.stamp
+        stamp_sec = float(st.sec) + float(st.nanosec) * 1e-9
+        age = now_sec - stamp_sec
+        try:
+            sx = math.sqrt(abs(self.amcl.pose.covariance[0]))
+            sy = math.sqrt(abs(self.amcl.pose.covariance[7]))
+        except Exception:
+            sx = sy = float('inf')
+        sigma = math.hypot(sx, sy)
+        age_ok = True
+        if self.require_amcl_age_gate and self.max_amcl_age_sec > 0.0:
+            age_ok = age <= self.max_amcl_age_sec
+        sigma_ok = True if self.max_amcl_pos_sigma <= 0.0 else (sigma <= self.max_amcl_pos_sigma)
+        fresh = age_ok and sigma_ok
+        return fresh, age, sigma
+
+    def _fmt_loc_value(self, value, digits, unit=''):
+        if value is None:
+            return f"n/a{unit}"
+        return f"{value:.{digits}f}{unit}"
+
+    def _schedule_fresh_retry(self, resume_cb, delay=1.0):
+        # create a one-shot timer to call resume_cb when localization may be fresher
+        if getattr(self, '_fresh_timer', None) is not None:
+            return
+        def _cb():
+            try:
+                if self._fresh_timer:
+                    self._fresh_timer.cancel()
+            except Exception:
+                pass
+            self._fresh_timer = None
+            resume_cb()
+        self._fresh_timer = self.create_timer(delay, _cb)
+
     def _make_pose_stamped(self, x, y, qz=0.0, qw=1.0):
         pose = PoseStamped()
         pose.header.frame_id = "map"
@@ -399,6 +474,14 @@ class WaypointSender(Node):
     def _try_start(self):
         if self._started or self.amcl is None: return
         if not self.ac.server_is_ready() or not self.pc.server_is_ready(): return
+        # gate start on localization freshness
+        fresh, age, sigma = self._localization_fresh()
+        if not fresh:
+            self.get_logger().warn(
+                f"[{self.robot_name}] WAIT-LOC age={self._fmt_loc_value(age, 1, 's')} "
+                f"sigma={self._fmt_loc_value(sigma, 3)} -> delaying start")
+            self._schedule_fresh_retry(self._try_start, delay=1.0)
+            return
         self._started = True
         self.get_logger().info(f"[{self.robot_name}] Nav2 ready")
         side = self.items[self.first_item]["sides"][self.first_side]
@@ -453,6 +536,14 @@ class WaypointSender(Node):
         self._check_next_candidate_path()
 
     def _check_next_candidate_path(self):
+        # ensure localization is fresh before planning
+        fresh, age, sigma = self._localization_fresh()
+        if not fresh:
+            self.get_logger().warn(
+                f"[{self.robot_name}] WAIT-LOC age={self._fmt_loc_value(age, 1, 's')} "
+                f"sigma={self._fmt_loc_value(sigma, 3)} -> delaying path checks")
+            self._schedule_fresh_retry(self._check_next_candidate_path, delay=1.0)
+            return
         if self._candidate_idx >= len(self._candidate_order):
             reachable = [i for i, ok in enumerate(self._candidate_ok) if ok]
             if reachable:
@@ -518,6 +609,14 @@ class WaypointSender(Node):
             # no more candidates -> begin sweep
             self._begin_sweep()
             return
+        # ensure localization is fresh before sending a navigation goal
+        fresh, age, sigma = self._localization_fresh()
+        if not fresh:
+            self.get_logger().warn(
+                f"[{self.robot_name}] WAIT-LOC age={self._fmt_loc_value(age, 1, 's')} "
+                f"sigma={self._fmt_loc_value(sigma, 3)} -> postponing SEND_GOAL")
+            self._schedule_fresh_retry(self._next_nav, delay=1.0)
+            return
         x, y, qz, qw = self._nav_queue.pop(0)
         goal = NavigateToPose.Goal()
         goal.pose = self._make_pose_stamped(x, y, qz, qw)
@@ -532,6 +631,14 @@ class WaypointSender(Node):
 
     def _send_final_nav(self):
         # send the actual approach point (final goal) after candidate succeeded
+        # gate on localization freshness before computing final path
+        fresh, age, sigma = self._localization_fresh()
+        if not fresh:
+            self.get_logger().warn(
+                f"[{self.robot_name}] WAIT-LOC age={self._fmt_loc_value(age, 1, 's')} "
+                f"sigma={self._fmt_loc_value(sigma, 3)} -> delaying final approach")
+            self._schedule_fresh_retry(self._send_final_nav, delay=1.0)
+            return
         if not hasattr(self, '_final_goal') or self._final_goal is None:
             self._next_nav()
             return
@@ -608,6 +715,20 @@ class WaypointSender(Node):
         gh = fut.result()
         if not gh.accepted:
             self.get_logger().warn(f"[{self.robot_name}] goal rejected")
+            # Nav2 can transiently reject when lifecycle/BT is not ready yet.
+            # Avoid flooding new sides; retry current side after a short delay.
+            if self.state == NAVIGATING and self.cur_side is not None and self.cur_item is not None:
+                self._awaiting_final = False
+                self._awaiting_final_path = False
+                self._nav_queue = []
+                self._candidate_idx = 0
+                self._candidate_ok = [False] * len(self._candidate_order)
+                self._candidate_paths = [None] * len(self._candidate_order)
+                self.get_logger().warn(
+                    f"[{self.robot_name}] retry current side after reject: {self.cur_skey}")
+                self._schedule_fresh_retry(self._check_next_candidate_path, delay=self.goal_reject_retry_sec)
+                return
+
             # if this was a final goal attempt, try next candidate
             if getattr(self, '_awaiting_final', False):
                 self._awaiting_final = False
