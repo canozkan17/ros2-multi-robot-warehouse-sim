@@ -336,7 +336,7 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
     odom_adjuster = ExecuteProcess(
         cmd=[
             'python3',
-            '/home/canozkan/thesis_ws/src/mini_scripts/odom_cov_adjuster.py',
+            '/home/canozkan/thesis_ws/src/warehouse_multi_robot/warehouse_multi_robot/odom_cov_adjuster.py',
             '--robot', name,
         ],
         name=f'odom_adjuster_{name}',

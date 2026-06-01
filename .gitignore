@@ -42,3 +42,4 @@ src/mini_scripts/bag_to_csv.py
 src/mini_scripts/odom_cov_adjuster.py
 
 waypoint_sender_situation.md
+src/mini_scripts/amcl_diagnose.py
