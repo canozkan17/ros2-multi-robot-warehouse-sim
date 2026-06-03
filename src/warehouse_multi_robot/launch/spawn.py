@@ -106,7 +106,8 @@ def spawn_robot(
     while not _model_present(robot_name):
         print(f'[spawn:{robot_name}] not visible yet, retrying in {retry_sec}s', flush=True)
         time.sleep(retry_sec)
-
+        
+    time.sleep(1.0)
     print(f'[spawn:{robot_name}] ready', flush=True)
 
 if __name__ == '__main__':

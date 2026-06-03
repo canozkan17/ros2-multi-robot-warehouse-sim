@@ -17,7 +17,7 @@ from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from nav2_msgs.action import NavigateToPose, ComputePathToPose
 from geometry_msgs.msg import PoseStamped, Twist, PoseWithCovarianceStamped
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool as BoolMsg
 
 SDF_PATH = os.path.expanduser(
     "~/thesis_ws/src/warehouse_multi_robot/worlds/tugbot_warehouse_clean.sdf")
@@ -315,6 +315,12 @@ AMCL_QOS = QoSProfile(depth=1,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
     reliability=ReliabilityPolicy.RELIABLE)
 
+MISSION_ARMED_QOS = QoSProfile(
+    depth=1,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=ReliabilityPolicy.RELIABLE,
+)
+
 class WaypointSender(Node):
     def __init__(self):
         super().__init__("waypoint_sender")
@@ -339,6 +345,7 @@ class WaypointSender(Node):
         self.declare_parameter('corner_recovery_max_tries', 1)
         self.declare_parameter('stall_progress_eps', 0.03)
         self.declare_parameter('stall_watch_period', 0.5)
+        self.declare_parameter('auto_start', False)
         self.max_amcl_age_sec = float(self.get_parameter('max_amcl_age_sec').value)
         self.max_amcl_pos_sigma = float(self.get_parameter('max_amcl_pos_sigma').value)
         self.require_amcl_age_gate = bool(self.get_parameter('require_amcl_age_gate').value)
@@ -355,6 +362,11 @@ class WaypointSender(Node):
         self.stall_timeout_sec = STALL_TIMEOUT_SEC
         self.stall_progress_eps = float(self.get_parameter('stall_progress_eps').value)
         self.stall_watch_period = float(self.get_parameter('stall_watch_period').value)
+        # Armed flag: set True immediately if auto_start=True (test mode),
+        # otherwise stays False until _mission_armed_cb() fires asynchronously.
+        # No blocking wait — _try_start() polls this flag via a 1 Hz timer.
+        self.armed = bool(self.get_parameter('auto_start').value)
+        self._wait_armed_logged = False
         self._fresh_timer = None
 
         self.items       = parse_sdf(SDF_PATH)
@@ -421,6 +433,8 @@ class WaypointSender(Node):
         self.create_subscription(String, "add_waypoints", self._addwp_cb, 10)
         self.create_subscription(String, "status",        self._status_cb, 10)
         self.create_subscription(String, "/side_claims", self._claim_cb, 50)
+        self.create_subscription(
+            BoolMsg, "/mission_armed", self._mission_armed_cb, MISSION_ARMED_QOS)
 
         self.create_timer(2.0,  self._pub_rem)
         self.create_timer(1.0,  self._try_start)
@@ -429,8 +443,22 @@ class WaypointSender(Node):
         self.create_timer(max(0.2, self.stall_watch_period), self._stall_watchdog)
         self._started = False
 
+        arm_state = "armed" if self.armed else "disarmed (WAIT-ARMED)"
         self.get_logger().info(
-            f"[{self.robot_name}] init | {len(self.items)} items | limit={self.wp_limit}")
+            f"[{self.robot_name}] init | {len(self.items)} items | limit={self.wp_limit} | {arm_state}")
+
+    def _mission_armed_cb(self, msg: BoolMsg):
+        if not msg.data:
+            return
+        self._set_armed('mission_armed')
+
+    def _set_armed(self, source: str):
+        if self.armed:
+            return
+        self.armed = True
+        self._wait_armed_logged = False
+        self.get_logger().info(f"[{self.robot_name}] MISSION-ARMED via {source}")
+        self._try_start()
 
     def _amcl_cb(self, msg):
         self.amcl  = msg
@@ -857,7 +885,19 @@ class WaypointSender(Node):
         return pose
 
     def _try_start(self):
+        # Called by a 1 Hz timer — never blocks the executor.
+        # Each condition (armed, amcl, action server, localization) is a
+        # non-blocking check; if any fails we simply return and the timer
+        # will call us again next second.
         if self._started or self.amcl is None: return
+        if not self.armed:
+            if not self._wait_armed_logged:
+                self._wait_armed_logged = True
+                self.get_logger().info(
+                    f"[{self.robot_name}] WAIT-ARMED — Nav2 may be ready; "
+                    f"no goals until /mission_armed is latched "
+                    f"(pub /mission_start or auto_start:=true)")
+            return
         if not self.ac.server_is_ready() or not self.pc.server_is_ready(): return
         # gate start on localization freshness
         fresh, age, sigma = self._localization_fresh()
@@ -1578,6 +1618,7 @@ class WaypointSender(Node):
 
 
 def main(args=None):
+    print("[DEBUG] Waypoint Sender Başladı", flush=True)
     rclpy.init(args=args)
     node = WaypointSender()
     try: rclpy.spin(node)

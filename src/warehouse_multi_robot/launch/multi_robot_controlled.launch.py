@@ -233,10 +233,10 @@ def _mission_nodes(name):
             parameters=[{
                 'robot_name':            name,
                 'use_sim_time':          True,
-                'max_amcl_age_sec':      12.0,
-                'max_amcl_pos_sigma':    -1.0,   # sigma gate disabled
-                'require_amcl_age_gate': False,
-                'goal_reject_retry_sec': 0.8,
+                'max_amcl_age_sec':      5.0,
+                'max_amcl_pos_sigma':    0.15,   # sigma gate disabled
+                'require_amcl_age_gate': True,
+                'goal_reject_retry_sec': 1.0,
             }],
             output='screen',
         ),
@@ -346,7 +346,13 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
     # gate: wait until scan, odom_fixed, and TF topics all have publishers
     topics_gate = _gate(
         'topics',
-        topics=[f'/{name}/scan', f'/{name}/odom_fixed', '/tf', '/tf_static'],
+        topics=[
+            f'/{name}/scan', 
+            f'/{name}/odom_fixed', 
+            f'/{name}/joint_states',
+            '/tf', 
+            '/tf_static'
+        ],
         label=f'gate_topics_{name}',
     )
 
@@ -365,6 +371,47 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
     )
 
     # ── wire the chain ────────────────────────────────────────────────────────
+    # Eğer şu an zinciri kurulan robot3 ise, rviz'i onun nav2'si hazır olunca başlat
+    if name == 'robot3':
+        rviz_config_path = '/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/rviz_multi_robot_nav2.rviz'
+        rviz_node = Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            arguments=['-d', rviz_config_path],
+            parameters=[{'use_sim_time': True}],
+            output='screen',
+        )
+        # Robot 3'ün nav2 lifecycle_gate'i başarıyla sonlandığında rviz'i tetikle
+        # Mission nodes'un hazır olduğu an, tüm sistemin stabilize olduğu andır.
+        rviz_trigger = RegisterEventHandler(OnProcessExit(
+            target_action=lifecycle_gate,
+            on_exit=[rviz_node],
+        ))
+        # Oluşturulan bu tetikleyiciyi robot3'ün launch listesine ekle
+        return [
+            RegisterEventHandler(OnProcessExit(
+                target_action=clock_gate,
+                on_exit=[spawn],
+            )),
+            RegisterEventHandler(OnProcessExit(
+                target_action=spawn,
+                on_exit=[bridge, rsp, tf_relay, odom_adjuster, topics_gate],
+            )),
+            RegisterEventHandler(OnProcessExit(
+                target_action=topics_gate,
+                on_exit=[
+                    _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, x, y),
+                    lifecycle_gate,
+                ],
+            )),
+            RegisterEventHandler(OnProcessExit(
+                target_action=lifecycle_gate,
+                on_exit=_mission_nodes(name),
+            )),
+            rviz_trigger  
+        ]
+
     return [
         # clock ready → spawn this robot
         RegisterEventHandler(OnProcessExit(
@@ -461,11 +508,21 @@ def generate_launch_description():
             output='screen',
         )
 
+        # Self Note: auto_start = True is only for testing purposes.
+        # In / after sprint 3 this will be triggered via GUI 
+        mission_gate = Node(
+            package='warehouse_multi_robot',
+            executable='mission_gate',
+            name='mission_gate',
+            parameters=[{'auto_start': False}],
+            output='screen',
+        )
+
         actions = [
             world_gate,
             RegisterEventHandler(OnProcessExit(
                 target_action=world_gate,
-                on_exit=[clock_bridge, clock_gate],
+                on_exit=[clock_bridge, clock_gate, mission_gate],
             )),
         ]
 

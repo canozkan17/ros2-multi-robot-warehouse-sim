@@ -1,12 +1,42 @@
 import os
 import re
 import subprocess
+import sys
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (IncludeLaunchDescription, SetEnvironmentVariable,
-                            TimerAction, GroupAction)
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+                            IncludeLaunchDescription, RegisterEventHandler,
+                            SetEnvironmentVariable, TimerAction, GroupAction)
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.parameter_descriptions import ParameterValue
+
+_LAUNCH_DIR = os.path.dirname(os.path.abspath(__file__))
+_GATE_PY = os.path.join(_LAUNCH_DIR, 'gate.py')
+
+_NAV2_LIFECYCLE_NODES = [
+    f'/{robot}/{node}'
+    for robot in ('robot1', 'robot2', 'robot3')
+    for node in (
+        'map_server', 'amcl', 'planner_server',
+        'controller_server', 'behavior_server', 'bt_navigator',
+    )
+]
+
+
+def _gate(mode, *, world_name=None, topics=None, nodes=None, label=None):
+    cmd = [sys.executable, _GATE_PY, '--mode', mode]
+    if world_name:
+        cmd += ['--world-name', world_name]
+    if topics:
+        cmd += ['--topics'] + topics
+    if nodes:
+        cmd += ['--nodes'] + nodes
+    return ExecuteProcess(cmd=cmd, name=label or f'gate_{mode}', output='screen')
 
 def patch_urdf(urdf: str, robot_name: str) -> str:
     """
@@ -46,10 +76,12 @@ def patch_urdf(urdf: str, robot_name: str) -> str:
     return urdf
 
 def generate_launch_description():
+    wmr_share   = get_package_share_directory('warehouse_multi_robot')
     tb3_gazebo  = get_package_share_directory('turtlebot3_gazebo')
     ros_gz_sim  = get_package_share_directory('ros_gz_sim')
     tb3_desc    = get_package_share_directory('turtlebot3_description')
     nav2_bt_dir = get_package_share_directory('nav2_bt_navigator')
+    rviz_config = os.path.join(wmr_share, 'config', 'rviz_multi_robot_nav2.rviz')
 
     bridge_yamls = {
         'robot1': '/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/bridge_robot1.yaml',
@@ -94,7 +126,22 @@ def generate_launch_description():
         'robot3': 0.01,
     }
 
+    use_rviz = LaunchConfiguration('use_rviz')
+    auto_start = LaunchConfiguration('auto_start')
+    gate_lifecycle_all = _gate(
+        'lifecycle', nodes=_NAV2_LIFECYCLE_NODES, label='gate_lifecycle_all')
+
     actions = [
+        DeclareLaunchArgument(
+            'use_rviz',
+            default_value='true',
+            description='Start RViz2 with multi-robot Nav2 layout',
+        ),
+        DeclareLaunchArgument(
+            'auto_start',
+            default_value='false',
+            description='If true, waypoint_sender starts mission immediately (no WAIT-ARMED)',
+        ),
         SetEnvironmentVariable('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'),
         SetEnvironmentVariable('GALLIUM_DRIVER', 'd3d12'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', fuel_path),
@@ -122,6 +169,35 @@ def generate_launch_description():
                  arguments=['--ros-args', '-p', f'config_file:={clock_yaml}'],
                  output='screen')
         ]),
+
+        TimerAction(period=4.0, actions=[
+            Node(
+                package='warehouse_multi_robot',
+                executable='mission_gate',
+                name='mission_gate',
+                parameters=[{
+                    'use_sim_time': True,
+                    'auto_start': ParameterValue(auto_start, value_type=bool),
+                }],
+                output='screen',
+            ),
+            gate_lifecycle_all,
+        ]),
+
+        RegisterEventHandler(OnProcessExit(
+            target_action=gate_lifecycle_all,
+            on_exit=[
+                Node(
+                    package='rviz2',
+                    executable='rviz2',
+                    name='rviz2',
+                    arguments=['-d', rviz_config],
+                    parameters=[{'use_sim_time': True}],
+                    output='screen',
+                    condition=IfCondition(use_rviz),
+                ),
+            ],
+        )),
     ]
 
     for i, robot in enumerate(robots):

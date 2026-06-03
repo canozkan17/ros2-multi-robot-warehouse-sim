@@ -3,6 +3,7 @@
 
 # VSCode settings
 .vscode/
+.continue/
 
 # ROS2 build artifacts 
 build/
@@ -41,5 +42,5 @@ src/mini_scripts/analyze_bag.py
 src/mini_scripts/bag_to_csv.py
 src/mini_scripts/odom_cov_adjuster.py
 
-waypoint_sender_situation.md
 src/mini_scripts/amcl_diagnose.py
+waypoint_sender_situation.md
