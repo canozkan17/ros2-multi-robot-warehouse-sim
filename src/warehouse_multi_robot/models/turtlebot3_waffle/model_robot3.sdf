@@ -514,6 +514,7 @@
       <frame_id>robot3/odom</frame_id>
       <child_frame_id>robot3/base_footprint</child_frame_id>
       <odom_publisher_frequency>50</odom_publisher_frequency>
+      <publish_odom_tf>false</publish_odom_tf>
 
       <tf_topic>/robot3/tf</tf_topic>
 

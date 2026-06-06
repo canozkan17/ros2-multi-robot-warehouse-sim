@@ -43,4 +43,8 @@ src/mini_scripts/bag_to_csv.py
 src/mini_scripts/odom_cov_adjuster.py
 
 src/mini_scripts/amcl_diagnose.py
+system_general_behavior.md
+.gitignore
+graph.md
 waypoint_sender_situation.md
+full_log.txt

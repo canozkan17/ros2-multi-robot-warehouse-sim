@@ -11,7 +11,7 @@ gz_sim (server + client)
                     └─► per robot, in parallel — each robot owns its full chain:
 
                         [gate:world] exits → spawn process starts
-                          └─► on spawn exit: bridge + rsp + tf_relay + odom_adjuster
+                          └─► on spawn exit: bridge + rsp + ekf_node
                                                + [gate:topics] process
                                 └─► on gate:topics exit: nav2 stack
                                                           + [gate:lifecycle] process
@@ -134,10 +134,13 @@ def _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, spawn_x, spawn_y):
                 'base_frame_id':    f'{name}/base_footprint',
                 'global_frame_id':  'map',
                 'set_initial_pose': True,
-                'initial_pose.x':   float(spawn_x),
-                'initial_pose.y':   float(spawn_y),
-                'initial_pose.z':   0.0,
-                'initial_pose.yaw': 0.0,
+                # Pass nested dictionary to override nested YAML parameter
+                'initial_pose': {
+                    'x':   float(spawn_x),
+                    'y':   float(spawn_y),
+                    'z':   0.0,
+                    'yaw': 0.0,
+                },
                 'initial_pose.covariance_x':   0.25,
                 'initial_pose.covariance_y':   0.25,
                 'initial_pose.covariance_yaw': 0.1,
@@ -162,7 +165,7 @@ def _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, spawn_x, spawn_y):
             remappings=[
                 ('cmd_vel', 'cmd_vel'),
                 ('scan',    'scan'),
-                ('odom',    'odom'),
+                ('odom',    'odom_filtered'),
             ],
             output='screen',
         ),
@@ -182,7 +185,7 @@ def _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, spawn_x, spawn_y):
             parameters=[nav2_yaml, {
                 'global_frame':            'map',
                 'robot_base_frame':        f'{name}/base_link',
-                'odom_topic':              'odom',
+                'odom_topic':              'odom_filtered', # Changed to EKF topic
                 'default_bt_xml_filename': default_bt_xml,
                 'navigators': ['navigate_to_pose', 'navigate_through_poses'],
                 'navigate_to_pose':
@@ -190,7 +193,8 @@ def _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, spawn_x, spawn_y):
                 'navigate_through_poses':
                     {'plugin': 'nav2_bt_navigator::NavigateThroughPosesNavigator'},
             }],
-            remappings=[('odom', 'odom')],
+            # Remap default odom topic to the filtered odom topic
+            remappings=[('odom', 'odom_filtered')],
             output='screen',
         ),
 
@@ -234,8 +238,8 @@ def _mission_nodes(name):
                 'robot_name':            name,
                 'use_sim_time':          True,
                 'max_amcl_age_sec':      5.0,
-                'max_amcl_pos_sigma':    0.15,   # sigma gate disabled
-                'require_amcl_age_gate': True,
+                'max_amcl_pos_sigma':    0.5, 
+                'require_amcl_age_gate': False,
                 'goal_reject_retry_sec': 1.0,
             }],
             output='screen',
@@ -280,7 +284,7 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
     Chain:
         clock_gate exits
           └─► spawn
-                └─► bridge + rsp + tf_relay + odom_adjuster + gate:topics
+                └─► bridge + rsp + ekf_node + gate:topics
                       └─► nav2 stack + gate:lifecycle
                             └─► mission nodes
     """
@@ -324,23 +328,19 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
         remappings=[('tf', '/tf'), ('tf_static', '/tf_static')],
         output='screen',
     )
-    tf_relay = Node(
-        # Gazebo publishes dynamic TF (odom→base_footprint) to /{name}/tf;
-        # relay it into the global /tf so Nav2 can see it.
-        package='topic_tools',
-        executable='relay',
-        name=f'tf_relay_{name}',
-        arguments=[f'/{name}/tf', '/tf'],
-        output='screen',
-    )
-    odom_adjuster = ExecuteProcess(
-        cmd=[
-            'python3',
-            '/home/canozkan/thesis_ws/src/warehouse_multi_robot/warehouse_multi_robot/odom_cov_adjuster.py',
-            '--robot', name,
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        namespace=name,
+        parameters=[nav2_yaml], 
+        # Added TF remappings to prevent EKF transforms from being trapped in namespace /robotX/tf
+        remappings=[
+            ('odometry/filtered', 'odom_filtered'),
+            ('tf', '/tf'),
+            ('tf_static', '/tf_static')
         ],
-        name=f'odom_adjuster_{name}',
-        output='screen',
+        output='screen'
     )
 
     # gate: wait until scan, odom_fixed, and TF topics all have publishers
@@ -348,7 +348,7 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
         'topics',
         topics=[
             f'/{name}/scan', 
-            f'/{name}/odom_fixed', 
+            f'/{name}/odom_filtered', 
             f'/{name}/joint_states',
             '/tf', 
             '/tf_static'
@@ -396,7 +396,7 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
             )),
             RegisterEventHandler(OnProcessExit(
                 target_action=spawn,
-                on_exit=[bridge, rsp, tf_relay, odom_adjuster, topics_gate],
+                on_exit=[bridge, rsp, ekf_node, topics_gate],
             )),
             RegisterEventHandler(OnProcessExit(
                 target_action=topics_gate,
@@ -422,7 +422,7 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
         # spawn done → bring up comms + start topics gate
         RegisterEventHandler(OnProcessExit(
             target_action=spawn,
-            on_exit=[bridge, rsp, tf_relay, odom_adjuster, topics_gate],
+            on_exit=[bridge, rsp, ekf_node, topics_gate],
         )),
 
         # topics ready → start Nav2 + start lifecycle gate
@@ -447,6 +447,34 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_launch_description():
+
+    # ── PRE-LAUNCH GUARD & AUTOMATED ZOMBIE CLEANUP ──────────────────────────
+    # Dynamically purge any lingering processes and stale DDS discovery caches 
+    # to ensure a completely clean slate, eliminating startup race conditions.
+    zombie_processes = [
+        "ruby", "gz", "gz-sim-server", "rviz2", "parameter_bridge", "clock_bridge",
+        "robot_state_publisher", "ekf_node", "planner_server", "controller_server",
+        "behavior_server", "bt_navigator", "map_server", "amcl", "lifecycle_manager",
+        "waypoint_sender", "agent_coordinator", "battery_monitor", "ros_gz_bridge"
+    ]
+    
+    try:
+        # Flush the ROS2 daemon to clear stale participant discovery caches
+        subprocess.run(["ros2", "daemon", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Slay all background zombie processes left from previous crashes or incomplete stops
+        for proc in zombie_processes:
+            subprocess.run(["killall", "-9", proc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+        print("[Launch Guard] Stale ROS2 daemon and zombie processes successfully cleared.")
+    except Exception as e:
+        print(f"[Launch Guard Warning] Failed to run automated cleanup: {e}")
+
+    # Isolate all DDS discovery and multicast traffic to localhost to prevent 
+    # latency spikes and discovery storms during intense parallel node bringup.
+    os.environ["ROS_LOCALHOST_ONLY"] = "1"
+    os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "localhost"  # ROS2 Jazzy dynamic discovery constraint
+
     # ── package paths ─────────────────────────────────────────────────────────
     ros_gz_sim  = get_package_share_directory('ros_gz_sim')
     tb3_desc    = get_package_share_directory('turtlebot3_description')

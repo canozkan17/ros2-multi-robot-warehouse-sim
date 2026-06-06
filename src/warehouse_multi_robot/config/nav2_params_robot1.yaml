@@ -17,8 +17,8 @@ robot1:
       min_particles: 500
       robot_model_type: "nav2_amcl::DifferentialMotionModel"
       transform_tolerance: 0.5
-      update_min_a: 0.02
-      update_min_d: 0.02
+      update_min_a: 0.05
+      update_min_d: 0.10
       z_hit: 0.80
       z_max: 0.05
       z_rand: 0.20
@@ -35,8 +35,8 @@ robot1:
       do_beamskip: false
       pf_err: 0.03
       pf_z: 0.99
-      recovery_alpha_fast: 0.1
-      recovery_alpha_slow: 0.001
+      recovery_alpha_fast: 0.0
+      recovery_alpha_slow: 0.0
       resample_interval: 1
       save_pose_rate: 0.5
       set_initial_pose: true
@@ -51,7 +51,7 @@ robot1:
       use_sim_time: True
       global_frame: map
       robot_base_frame: robot1/base_link
-      odom_topic: /robot1/odom_fixed
+      odom_topic: /robot1/odom_filtered
       bt_loop_duration: 10
       default_server_timeout: 20
       navigate_to_pose:
@@ -77,22 +77,22 @@ robot1:
       general_goal_checker:
         stateful: True
         plugin: "nav2_controller::SimpleGoalChecker"
-        xy_goal_tolerance: 0.10
-        yaw_goal_tolerance: 0.10
+        xy_goal_tolerance: 0.15
+        yaw_goal_tolerance: 0.25
       FollowPath:
         plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
         desired_linear_vel: 0.8
-        lookahead_dist: 0.45
-        min_lookahead_dist: 0.18
-        max_lookahead_dist: 0.65
-        lookahead_time: 1.2
+        lookahead_dist: 0.60
+        min_lookahead_dist: 0.35
+        max_lookahead_dist: 1.20
+        lookahead_time: 1.5
         rotate_to_heading_angular_vel: 1.0
         transform_tolerance: 0.1
         use_velocity_scaled_lookahead_dist: true
         min_approach_linear_velocity: 0.03
         approach_velocity_scaling_dist: 0.75
         use_collision_detection: true
-        max_allowed_time_to_collision_up_to_carrot: 1.5
+        max_allowed_time_to_collision_up_to_carrot: 1.0
         use_regulated_linear_velocity_scaling: true
         use_fixed_curvature_lookahead: false
         curvature_reg_k: 2.5
@@ -122,8 +122,8 @@ robot1:
         plugins: ["obstacle_layer", "inflation_layer"]
         inflation_layer:
           plugin: "nav2_costmap_2d::InflationLayer"
-          cost_scaling_factor: 6.0
-          inflation_radius: 0.30
+          cost_scaling_factor: 5.0
+          inflation_radius: 0.28
         obstacle_layer:
           plugin: "nav2_costmap_2d::ObstacleLayer"
           enabled: True
@@ -159,8 +159,8 @@ robot1:
           map_subscribe_transient_local: True
         inflation_layer:
           plugin: "nav2_costmap_2d::InflationLayer"
-          cost_scaling_factor: 6.0
-          inflation_radius: 0.35
+          cost_scaling_factor: 3.0
+          inflation_radius: 0.55
         always_send_full_costmap: True
 
   map_server:
@@ -242,7 +242,35 @@ robot1:
       min_velocity: [-0.5, 0.0, -2.0]
       max_accel: [2.5, 0.0, 3.2]
       max_decel: [-2.5, 0.0, -3.2]
-      odom_topic: "odom"
+      odom_topic: "odom_filtered"
       odom_duration: 0.1
       deadband_velocity: [0.0, 0.0, 0.0]
       velocity_timeout: 1.0
+
+  ekf_filter_node:
+    ros__parameters:
+      use_sim_time: true
+      frequency: 30.0
+      two_d_mode: true
+      publish_tf: true
+      
+      map_frame: map
+      odom_frame: robot1/odom
+      base_link_frame: robot1/base_footprint
+      world_frame: robot1/odom
+
+      odom0: /robot1/odom
+      odom0_config: [false, false, false,
+                     false, false, false,
+                     true,  true,  false,
+                     false, false, true,
+                     false, false, false]
+
+      imu0: /robot1/imu
+      
+      imu0_config: [false, false, false,
+                    false, false, false,   
+                    false, false, false,
+                    false, false, true,   
+                    true,  false, false]  
+      imu0_remove_gravitational_acceleration: true

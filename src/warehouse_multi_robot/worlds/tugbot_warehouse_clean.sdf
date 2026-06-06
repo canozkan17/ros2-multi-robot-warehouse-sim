@@ -1,5 +1,5 @@
 <sdf version='1.10'>
-  <world name='world_demo'>
+  <world name='tugbot_warehouse_clean'>
     <gravity>0 0 -9.8000000000000007</gravity>
     <physics type='ode'>
       <max_step_size>0.01</max_step_size>

@@ -1,137 +1,79 @@
 #!/usr/bin/env python3
 """
+battery_monitor.py - Simulated Battery and Hardware Status Monitor.
 
-Runs independently for each robot.
-Parameters:
-  - robot_name  : robot1 | robot2 | robot3
-  - drain_rate  : battery percentage per second. (default: 1.0)
-  - fail_at     : failure threshold (default: 0.0 -> total finish)
-  - start_at    : starting battery percentage (default: 100.0) 
-
-Topics:
-  - /robotN/status       -> String  (ACTIVE | FAILED)
-  - /robotN/battery_pct  -> Float32 (0.0 - 100.0)
-
-Services:
-  - /robotN/inject_failure -> Trigger (external failure trigger)
+This node simulates battery consumption over time. When the battery charge
+reaches the failure threshold, it publishes a FAILED status to trigger
+autonomous reallocation among surviving fleet members.
 """
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Float32
-from std_srvs.srv import Trigger
+from std_msgs.msg import String
 
 
-class BatteryMonitor(Node):
-
+class BatteryMonitorNode(Node):
     def __init__(self):
-        super().__init__('battery_monitor')
-
-        # Parameters
-        self.declare_parameter('robot_name', 'robot1')
-        self.declare_parameter('drain_rate', 1.0)   # % / seconds
-        self.declare_parameter('fail_at', 0.0)       # FAILED in this threshold
-        self.declare_parameter('start_at', 100.0)    # starting point. 
-
-        self.robot_name = self.get_parameter('robot_name').value
-        self.drain_rate = self.get_parameter('drain_rate').value
-        self.fail_at    = self.get_parameter('fail_at').value
-        self.battery    = self.get_parameter('start_at').value
-
-        # status
-        self.status = 'ACTIVE'
-        self.failed = False
-
-        # Publishers
-        self.status_pub  = self.create_publisher(
-            String, f'/{self.robot_name}/status', 10)
-        self.battery_pub = self.create_publisher(
-            Float32, f'/{self.robot_name}/battery_pct', 10)
-
-        # External failure trigger service
-        self.inject_srv = self.create_service(
-            Trigger,
-            f'/{self.robot_name}/inject_failure',
-            self.inject_failure_callback)
-
-        # Main loop: works once for every second
-        self.timer = self.create_timer(1.0, self.tick)
-
+        super().__init__("battery_monitor")
+        
+        # Declare Parameters
+        self.declare_parameter("robot_name", "robot1")
+        self.declare_parameter("drain_rate", 0.01)  # Amount of charge lost per tick
+        self.declare_parameter("fail_at", 0.0)      # Charge percentage that triggers failure
+        self.declare_parameter("start_at", 100.0)   # Initial battery percentage
+        
+        self.robot_name = self.get_parameter("robot_name").value
+        self.drain_rate = self.get_parameter("drain_rate").value
+        self.fail_at = self.get_parameter("fail_at").value
+        self.current_charge = self.get_parameter("start_at").value
+        
+        # State Indicators
+        self.is_failed = False
+        
+        # Publisher
+        self.status_pub = self.create_publisher(String, "status", 10)
+        
+        # Timer (10 Hz rate to drain battery smoothly)
+        self.drain_timer = self.create_timer(0.1, self._drain_battery_tick)
+        
         self.get_logger().info(
-            f'[{self.robot_name}] Battery_Monitor started | '
-            f'Start={self.battery:.1f}% | '
-            f'drain={self.drain_rate:.2f}%/s | '
-            f'fail_at={self.fail_at:.1f}%'
+            f"[{self.robot_name}] Battery Monitor active. Start charge: {self.current_charge}%"
         )
 
-    
-    # Main Loop
-    def tick(self):
-        if self.failed:
-            self._publish_status('FAILED')
+    def _drain_battery_tick(self):
+        """Simulates battery depletion. Triggers failure state at the threshold."""
+        if self.is_failed:
             return
-
-        # Drop battery
-        self.battery = max(0.0, self.battery - self.drain_rate)
-
-        # Battery pub
-        batt_msg = Float32()
-        batt_msg.data = self.battery
-        self.battery_pub.publish(batt_msg)
-
-        # control
-        if self.battery <= self.fail_at:
-            self._trigger_failure(reason='Battery Drained')
-            return
-
-        self._publish_status('ACTIVE')
-
-        self.get_logger().debug(
-            f'[{self.robot_name}] battery={self.battery:.1f}%')
-
-    # Fauilure Trigger (internal + external)
-    def _trigger_failure(self, reason: str = 'unknown'):
-        if self.failed:
-            return
-        self.failed = True
-        self.status = 'FAILED'
-        self.get_logger().warn(
-            f'[{self.robot_name}] FAILURE DETECTED — reason: {reason} | '
-            f'Battery={self.battery:.1f}%'
+            
+        # Smoothly drain the battery
+        self.current_charge -= self.drain_rate
+        
+        if self.current_charge <= self.fail_at:
+            self.current_charge = self.fail_at
+            self.is_failed = True
+            self._trigger_failure()
+            
+    def _trigger_failure(self):
+        """Publishes FAILED status to inform fleet coordination systems."""
+        self.get_logger().error(
+            f"[{self.robot_name}] BATTERY DEPLETED! Triggering simulated hardware failure."
         )
-        self._publish_status('FAILED')
-
-    def inject_failure_callback(self, request, response):
-        """
-        External Trigger: ros2 service call /robot1/inject_failure std_srvs/srv/Trigger {}
-        """
-        if self.failed:
-            response.success = False
-            response.message = f'{self.robot_name} already in FAILED status.'
-        else:
-            self._trigger_failure(reason='external inject_failure service')
-            response.success = True
-            response.message = f'{self.robot_name} went into FAILED state.'
-        return response
-
-    
-    # Status publisher
-    def _publish_status(self, status: str):
         msg = String()
-        msg.data = status
+        msg.data = "FAILED"
         self.status_pub.publish(msg)
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = BatteryMonitor()
+    node = BatteryMonitorNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+           rclpy.shutdown()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
