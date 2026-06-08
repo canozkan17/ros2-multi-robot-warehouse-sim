@@ -185,7 +185,8 @@ def select_next_target(
     current_item_name: Optional[str] = None,
     current_side_key: Optional[str] = None,
     greedy_mode: bool = False,
-    reallocation_reference_coords: Optional[Tuple[float, float]] = None
+    reallocation_reference_coords: Optional[Tuple[float, float]] = None,
+    deferred_side_keys: Optional[Set[str]] = None  # Resolved: S6 parameter injection
 ) -> Optional[Dict[str, Any]]:
     """
     Main State-Free Target Decision Tree.
@@ -286,7 +287,6 @@ def select_next_target(
     # RULE 3: GREEDY ALLOCATION MODE (Active Failure/Reallocation Recovery)
     # ==========================================================================
     if greedy_mode:
-        # Determine coordinate from which to calculate distances
         ref_x = reallocation_reference_coords[0] if reallocation_reference_coords else current_x
         ref_y = reallocation_reference_coords[1] if reallocation_reference_coords else current_y
 
@@ -296,6 +296,10 @@ def select_next_target(
         for item_name, item in items.items():
             for side_name, side_spec in item["sides"].items():
                 if is_side_completed(item, side_spec):
+                    continue
+                
+                # Resolved S6: Exclude persistently blocked/deferred tasks from allocation
+                if deferred_side_keys and side_spec["key"] in deferred_side_keys:
                     continue
 
                 ordered = get_ordered_sections(side_spec, ref_x, ref_y)
@@ -326,7 +330,6 @@ def select_next_target(
     # ==========================================================================
     # RULE 4: SEQUENTIAL SWEEP ARCHITECTURE (Standard Heuristic Mode)
     # ==========================================================================
-    # Pin current region to active item's region to prevent boundary coordinate jitter
     current_region = None
     if current_item_name:
         active_item = items.get(current_item_name)
@@ -336,16 +339,16 @@ def select_next_target(
     if current_region is None:
         current_region = classify_cartesian_region(current_x, current_y)
 
-    # 1. Step: Search ONLY inside the CURRENT region for items matching PRIORITY DIRECTION 1
+    # 1. Step: Search ONLY inside CURRENT region for PRIORITY DIRECTION 1
     if len(priority_dirs) >= 1:
         dir1 = priority_dirs[0]
         candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-            items, robot_name, current_x, current_y, current_region, dir1, active_claims, now_ns
+            items, robot_name, current_x, current_y, current_region, dir1, active_claims, now_ns, deferred_side_keys
         )
         if candidate_item:
             return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_DIR1")
 
-    # 2. Step: Search ALL owned regions for items matching PRIORITY DIRECTION 2 (Global Nearest-Neighbor Sweep)
+    # 2. Step: Search ALL owned regions for PRIORITY DIRECTION 2
     if len(priority_dirs) >= 2:
         dir2 = priority_dirs[1]
         best_cand_b = None
@@ -353,7 +356,7 @@ def select_next_target(
         
         for region in owned_regions:
             candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-                items, robot_name, current_x, current_y, region, dir2, active_claims, now_ns
+                items, robot_name, current_x, current_y, region, dir2, active_claims, now_ns, deferred_side_keys
             )
             if candidate_item:
                 tx, ty, _ = candidate_sec
@@ -365,27 +368,22 @@ def select_next_target(
         if best_cand_b:
             return _build_target_response(best_cand_b[0], best_cand_b[1], best_cand_b[2], "HEURISTIC_DIR2")
 
-    # 3. Step: Fallback search ONLY inside the CURRENT region (Direction-Independent)
+    # 3. Step: Fallback search ONLY inside CURRENT region (Direction-Independent)
     candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-        items, robot_name, current_x, current_y, current_region, direction=None, active_claims=active_claims, now_ns=now_ns
+        items, robot_name, current_x, current_y, current_region, None, active_claims, now_ns, deferred_side_keys
     )
     if candidate_item:
         return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_REGION_FALLBACK")
 
-    # 4. Step: Region and Direction-Independent World-Wide Fallback (Edge Case / Failed State only)
+    # 4. Step: Region/Direction-Independent Fallback
     candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-        items, robot_name, current_x, current_y, region=None, direction=None, active_claims=active_claims, now_ns=now_ns
+        items, robot_name, current_x, current_y, None, None, active_claims, now_ns, deferred_side_keys
     )
     if candidate_item:
         return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_WORLD_FALLBACK")
 
-    # No uncompleted and eligible targets remain
     return None
 
-
-# ==============================================================================
-# 5. CORE SELECTION SUB-ROUTINES (PRIVATE HELPERS)
-# ==============================================================================
 
 def _search_closest_item_in_direction_and_region(
     items: Dict[str, Any],
@@ -395,25 +393,17 @@ def _search_closest_item_in_direction_and_region(
     region: Optional[int],
     direction: Optional[str],
     active_claims: Dict[str, Dict[str, Any]],
-    now_ns: int
+    now_ns: int,
+    deferred_side_keys: Optional[Set[str]] = None  # Resolved S6 parameter mapping
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Tuple[float, float, str]]]:
-    """
-    Finds the closest uncompleted item fitting region and direction bounds.
-    """
     closest_item_name = None
     closest_side_spec = None
     closest_section_pt = None
     min_item_distance = float('inf')
 
     for item_name, item in items.items():
-        # Region Filter (Skip if region specified and does not match)
         if region is not None and item["region"] != region:
             continue
-            
-        # Direction Filter (Skip if direction specified and does not match item center)
-        if direction is not None:
-            if not is_item_in_direction(current_x, current_y, item["x"], item["y"], direction):
-                continue
 
         best_side_spec = None
         best_section_pt = None
@@ -423,31 +413,35 @@ def _search_closest_item_in_direction_and_region(
             if is_side_completed(item, side_spec):
                 continue
                 
-            # Static Owner Validation
+            # Resolved S6: Exclude deferred tasks from standard sweeps
+            if deferred_side_keys and side_spec["key"] in deferred_side_keys:
+                continue
+                
             static_owner = ITEM_SIDE_OWNERS.get(side_spec["key"])
             if static_owner and static_owner != robot_name:
                 continue
 
-            # Find closest uncompleted section
             ordered = get_ordered_sections(side_spec, current_x, current_y)
             uncompleted_idx = get_next_uncompleted_section_index(item, side_spec, ordered)
             if uncompleted_idx is not None:
                 sec_pt = ordered[uncompleted_idx]
                 
-                # Verify if this specific section is already claimed by another active agent
                 section_key = f"{side_spec['key']}_{sec_pt[2]}"
                 if is_section_claimed_by_other(section_key, robot_name, active_claims, now_ns):
-                    continue  # Skip this side to prevent localization/collision deadlocks
+                    continue  
                 
+                # Validate direction against section approach coordinates (sec_pt) instead of item center
+                if direction is not None:
+                    if not is_item_in_direction(current_x, current_y, sec_pt[0], sec_pt[1], direction):
+                        continue
+
                 dist = calculate_distance(current_x, current_y, sec_pt[0], sec_pt[1])
                 if dist < min_side_distance:
                     min_side_distance = dist
                     best_side_spec = side_spec
                     best_section_pt = sec_pt
 
-        # If eligible side/section found inside item, check distance to robot
         if best_side_spec and best_section_pt:
-            # Measure proximity to the item center (determines closest item overall)
             item_dist = calculate_distance(current_x, current_y, item["x"], item["y"])
             if item_dist < min_item_distance:
                 min_item_distance = item_dist

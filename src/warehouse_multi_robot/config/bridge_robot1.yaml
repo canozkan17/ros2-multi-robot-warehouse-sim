@@ -4,11 +4,8 @@
   gz_type_name: "gz.msgs.Odometry"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "robot1/tf"
-  gz_topic_name: "robot1/tf"
-  ros_type_name: "tf2_msgs/msg/TFMessage"
-  gz_type_name: "gz.msgs.Pose_V"
-  direction: GZ_TO_ROS
+# This block is COMPLETELY REMOVED to eliminate double TF publisher conflicts. 
+# robotN/odom_filtered EKF node remains the sole publisher of odom -> base_footprint transformation.
 
 - ros_topic_name: "robot1/cmd_vel"
   gz_topic_name: "robot1/cmd_vel"

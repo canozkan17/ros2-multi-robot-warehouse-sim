@@ -101,10 +101,7 @@ RECOVERY_ESCAPE_DISTANCE_M = 0.45
 ITEM_SIDE_OWNERS = {
     "shelf_2_yplus": "robot1",
     "shelf_2_yminus": "robot3",
-    "shelf_5_yminus": "robot1",
-    "shelf_5_yplus": "robot2",
-    "shelf_big_3_xplus": "robot2",
-    "shelf_big_3_xminus": "robot3",
+    "shelf_5_yplus": "robot1",
 }
 
 
@@ -133,7 +130,7 @@ ROBOTS_SPECIFICATION = {
         "first_item": "shelf_2",
         "first_side": "yminus",
         "owned_regions": [2, 3],
-        "priority_directions": ["south", "west"],
+        "priority_directions": ["west", "south"],
         "waypoint_limit": 47
     },
 }

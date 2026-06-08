@@ -246,14 +246,6 @@ def _mission_nodes(name):
         ),
         Node(
             package='warehouse_multi_robot',
-            executable='agent_coordinator',
-            name='agent_coordinator',
-            namespace=name,
-            parameters=[{'robot_name': name, 'use_sim_time': True}],
-            output='screen',
-        ),
-        Node(
-            package='warehouse_multi_robot',
             executable='battery_monitor',
             name=f'battery_monitor_{name}',
             namespace=name,
@@ -274,7 +266,7 @@ def _mission_nodes(name):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
-                 map_yaml, default_bt_xml, clock_gate):
+                 map_yaml, default_bt_xml, start_trigger_gate):
     """
     Build and return all launch actions for one robot.
 
@@ -371,7 +363,31 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
     )
 
     # ── wire the chain ────────────────────────────────────────────────────────
-    # Eğer şu an zinciri kurulan robot3 ise, rviz'i onun nav2'si hazır olunca başlat
+    # start_trigger_gate ready → spawn this robot
+    spawn_trigger = RegisterEventHandler(OnProcessExit(
+        target_action=start_trigger_gate,
+        on_exit=[spawn],
+    ))
+
+    actions_list = [
+        spawn_trigger,
+        RegisterEventHandler(OnProcessExit(
+            target_action=spawn,
+            on_exit=[bridge, rsp, ekf_node, topics_gate],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=topics_gate,
+            on_exit=[
+                _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, x, y),
+                lifecycle_gate,
+            ],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=lifecycle_gate,
+            on_exit=_mission_nodes(name),
+        )),
+    ]
+
     if name == 'robot3':
         rviz_config_path = '/home/canozkan/thesis_ws/src/warehouse_multi_robot/config/rviz_multi_robot_nav2.rviz'
         rviz_node = Node(
@@ -380,66 +396,18 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
             name='rviz2',
             arguments=['-d', rviz_config_path],
             parameters=[{'use_sim_time': True}],
+            # Force RViz2 to use CPU software OpenGL rasterizer to bypass Mesa D3D12 NVIDIA shader compilation bug
+            additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'},
             output='screen',
         )
-        # Robot 3'ün nav2 lifecycle_gate'i başarıyla sonlandığında rviz'i tetikle
-        # Mission nodes'un hazır olduğu an, tüm sistemin stabilize olduğu andır.
+        # Trigger rviz launch only when robot 3 is fully initialized
         rviz_trigger = RegisterEventHandler(OnProcessExit(
             target_action=lifecycle_gate,
             on_exit=[rviz_node],
         ))
-        # Oluşturulan bu tetikleyiciyi robot3'ün launch listesine ekle
-        return [
-            RegisterEventHandler(OnProcessExit(
-                target_action=clock_gate,
-                on_exit=[spawn],
-            )),
-            RegisterEventHandler(OnProcessExit(
-                target_action=spawn,
-                on_exit=[bridge, rsp, ekf_node, topics_gate],
-            )),
-            RegisterEventHandler(OnProcessExit(
-                target_action=topics_gate,
-                on_exit=[
-                    _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, x, y),
-                    lifecycle_gate,
-                ],
-            )),
-            RegisterEventHandler(OnProcessExit(
-                target_action=lifecycle_gate,
-                on_exit=_mission_nodes(name),
-            )),
-            rviz_trigger  
-        ]
-
-    return [
-        # clock ready → spawn this robot
-        RegisterEventHandler(OnProcessExit(
-            target_action=clock_gate,
-            on_exit=[spawn],
-        )),
-
-        # spawn done → bring up comms + start topics gate
-        RegisterEventHandler(OnProcessExit(
-            target_action=spawn,
-            on_exit=[bridge, rsp, ekf_node, topics_gate],
-        )),
-
-        # topics ready → start Nav2 + start lifecycle gate
-        RegisterEventHandler(OnProcessExit(
-            target_action=topics_gate,
-            on_exit=[
-                _nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, x, y),
-                lifecycle_gate,
-            ],
-        )),
-
-        # lifecycle active → start mission nodes
-        RegisterEventHandler(OnProcessExit(
-            target_action=lifecycle_gate,
-            on_exit=_mission_nodes(name),
-        )),
-    ]
+        actions_list.append(rviz_trigger)
+    # Return the action list AND the lifecycle gate to chain the next robot
+    return actions_list, lifecycle_gate
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -447,33 +415,6 @@ def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml,
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_launch_description():
-
-    # ── PRE-LAUNCH GUARD & AUTOMATED ZOMBIE CLEANUP ──────────────────────────
-    # Dynamically purge any lingering processes and stale DDS discovery caches 
-    # to ensure a completely clean slate, eliminating startup race conditions.
-    zombie_processes = [
-        "ruby", "gz", "gz-sim-server", "rviz2", "parameter_bridge", "clock_bridge",
-        "robot_state_publisher", "ekf_node", "planner_server", "controller_server",
-        "behavior_server", "bt_navigator", "map_server", "amcl", "lifecycle_manager",
-        "waypoint_sender", "agent_coordinator", "battery_monitor", "ros_gz_bridge"
-    ]
-    
-    try:
-        # Flush the ROS2 daemon to clear stale participant discovery caches
-        subprocess.run(["ros2", "daemon", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Slay all background zombie processes left from previous crashes or incomplete stops
-        for proc in zombie_processes:
-            subprocess.run(["killall", "-9", proc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-        print("[Launch Guard] Stale ROS2 daemon and zombie processes successfully cleared.")
-    except Exception as e:
-        print(f"[Launch Guard Warning] Failed to run automated cleanup: {e}")
-
-    # Isolate all DDS discovery and multicast traffic to localhost to prevent 
-    # latency spikes and discovery storms during intense parallel node bringup.
-    os.environ["ROS_LOCALHOST_ONLY"] = "1"
-    os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "localhost"  # ROS2 Jazzy dynamic discovery constraint
 
     # ── package paths ─────────────────────────────────────────────────────────
     ros_gz_sim  = get_package_share_directory('ros_gz_sim')
@@ -554,16 +495,36 @@ def generate_launch_description():
             )),
         ]
 
-        # build each robot's chain — all robots share the same clock_gate
-        # as their start trigger so they run in parallel
-        for robot in robots:
-            actions.extend(_robot_chain(
-                robot, world_name, base_urdf,
-                bridge_yamls[robot['name']],
-                nav2_yamls[robot['name']],
-                map_yaml, default_bt_xml,
-                clock_gate,
-            ))
+        # Daisy-chain the robot launching sequences sequentially to prevent CPU starvation on WSL2
+        # robot1 triggers immediately when clock_gate is ready
+        robot1_actions, robot1_lifecycle_gate = _robot_chain(
+            robots[0], world_name, base_urdf,
+            bridge_yamls[robots[0]['name']],
+            nav2_yamls[robots[0]['name']],
+            map_yaml, default_bt_xml,
+            clock_gate,
+        )
+        actions.extend(robot1_actions)
+
+        # robot2 triggers only when robot1's lifecycle_gate finishes successfully (ACTIVE)
+        robot2_actions, robot2_lifecycle_gate = _robot_chain(
+            robots[1], world_name, base_urdf,
+            bridge_yamls[robots[1]['name']],
+            nav2_yamls[robots[1]['name']],
+            map_yaml, default_bt_xml,
+            robot1_lifecycle_gate,
+        )
+        actions.extend(robot2_actions)
+
+        # robot3 triggers only when robot2's lifecycle_gate finishes successfully (ACTIVE)
+        robot3_actions, robot3_lifecycle_gate = _robot_chain(
+            robots[2], world_name, base_urdf,
+            bridge_yamls[robots[2]['name']],
+            nav2_yamls[robots[2]['name']],
+            map_yaml, default_bt_xml,
+            robot2_lifecycle_gate,
+        )
+        actions.extend(robot3_actions)
 
         return actions
 

@@ -1,0 +1,7 @@
+[WARN] [1780864927.900294288] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
+[WARN] [1780864927.900330910] [rcl]: 'localhost_only' is enabled, 'automatic_discovery_range' and 'static_peers' will be ignored.
+[INFO] [1780864928.098124744] [system_diagnosis]: ==================================================
+[INFO] [1780864928.098426975] [system_diagnosis]: [Diagnosis] Initializing Event-Driven Flight Recorder (v1.1)
+[INFO] [1780864928.098634146] [system_diagnosis]: ==================================================
+[INFO] [1780864928.100906449] [system_diagnosis]: [Diagnosis] Geometrical Verification Complete. Waypoints: 142, Invalid: 0
+[INFO] [1780864928.121864548] [system_diagnosis]: [Diagnosis] Flight Recorder initialized. Quiet mode active.

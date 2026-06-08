@@ -3,26 +3,28 @@
   ros_type_name: "nav_msgs/msg/Odometry"
   gz_type_name: "gz.msgs.Odometry"
   direction: GZ_TO_ROS
-- ros_topic_name: "robot2/tf"
-  gz_topic_name: "robot2/tf"
-  ros_type_name: "tf2_msgs/msg/TFMessage"
-  gz_type_name: "gz.msgs.Pose_V"
-  direction: GZ_TO_ROS
+
+# This block is COMPLETELY REMOVED to eliminate double TF publisher conflicts. 
+# robotN/odom_filtered EKF node remains the sole publisher of odom -> base_footprint transformation.
+
 - ros_topic_name: "robot2/cmd_vel"
   gz_topic_name: "robot2/cmd_vel"
   ros_type_name: "geometry_msgs/msg/Twist"
   gz_type_name: "gz.msgs.Twist"
   direction: ROS_TO_GZ
+
 - ros_topic_name: "robot2/scan"
   gz_topic_name: "robot2/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
+
 - ros_topic_name: "robot2/imu"
   gz_topic_name: "robot2/imu"
   ros_type_name: "sensor_msgs/msg/Imu"
   gz_type_name: "gz.msgs.IMU"
   direction: GZ_TO_ROS
+
   frame_id: "robot2/imu_link"
 - ros_topic_name: "robot2/joint_states"
   gz_topic_name: "robot2/joint_states"

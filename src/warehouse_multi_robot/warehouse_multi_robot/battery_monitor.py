@@ -10,7 +10,7 @@ autonomous reallocation among surviving fleet members.
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 class BatteryMonitorNode(Node):
     def __init__(self):
@@ -31,7 +31,14 @@ class BatteryMonitorNode(Node):
         self.is_failed = False
         
         # Publisher
-        self.status_pub = self.create_publisher(String, "status", 10)
+        qos_status = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE
+        )
+        # Force explicit absolute status topic pathing matching the core agent node
+        absolute_status_topic = f"/{self.robot_name}/status"
+        self.status_pub = self.create_publisher(String, absolute_status_topic, qos_status)
         
         # Timer (10 Hz rate to drain battery smoothly)
         self.drain_timer = self.create_timer(0.1, self._drain_battery_tick)
