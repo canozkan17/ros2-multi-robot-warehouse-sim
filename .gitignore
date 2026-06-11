@@ -27,7 +27,6 @@ waypoint_clearance_report.txt
 
 #Scripts
 char_count.py
-diagnosis.py
 system_health_check.py
 waypoint_clearance_report.py
 robot_tracker.py
@@ -48,3 +47,5 @@ system_general_behavior.md
 graph.md
 waypoint_sender_situation.md
 full_log.txt
+/home/canozkan/thesis_ws/diagnosis_terminal_logs.txt
+

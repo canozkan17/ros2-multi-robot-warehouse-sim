@@ -145,8 +145,8 @@ class ClaimManager:
         now_ns = int(self.node.get_clock().now().nanoseconds)
         expire_at_ns = now_ns + (6 * 1_000_000_000)
         
-        # Build section-specific lock key (e.g. shelf_2_yplus_D)
-        side_key = f"{self.node.active_target_dict['side_key']}_{self.node.active_target_dict['section_label']}"
+        # Build side-specific (corridor-segment) lock key (e.g. shelf_big_3_xminus)
+        side_key = self.node.active_target_dict['side_key']
         payload = {
             "robot_id": self.node.robot_name,
             "side_key": side_key,
@@ -216,8 +216,8 @@ class TaskCoordinator:
         self.items_registry = parse_sdf(SDF_WORLD_PATH)
         self.global_completed_waypoints: Set[str] = set()
         
-        # Publisher to trigger local and peer reallocations
-        self.add_waypoints_pub = self.node.create_publisher(String, "add_waypoints", 10)
+        # Publisher changed to absolute/global to resolve DDS namespace isolation bug
+        self.add_waypoints_pub = self.node.create_publisher(String, "/add_waypoints", 10)
 
     def process_arrival(self, robot_id: str, shelf_id: str):
         """Tracks global task completions to keep registries synchronized."""
@@ -236,7 +236,7 @@ class TaskCoordinator:
                 self.node.claim_mgr.release_local_claim()
 
     def trigger_reallocation(self, failed_robot_name: str):
-        """Performs task re-distribution for a failed peer robot."""
+        """Performs battery and distance proportional task re-distribution for a failed peer robot."""
         # Clean up stale locks held by the failed peer
         expired_claims = []
         for side_key, claim in list(self.node.claim_mgr.active_claims.items()):
@@ -284,13 +284,64 @@ class TaskCoordinator:
         if not uncompleted_waypoints_to_reallocate:
             return
 
+        # 1. Determine active survivors
+        all_robots = list(ROBOTS_SPECIFICATION.keys())
+        survivors = [
+            r for r in all_robots 
+            if r != failed_robot_name and r not in self.node.health_monitor.failed_robots
+        ]
+        
+        if not survivors:
+            self.node.get_logger().error(f"[{self.node.robot_name}] No active survivors left to take over tasks!")
+            return
+
+        # 2. Gather batteries and calculate proportional split ratios
+        # Default to 100.0 if not received yet. Handles asynchrony gracefully
+        batteries = {s: self.node.peer_batteries.get(s, 100.0) for s in survivors}
+        total_battery = sum(batteries.values())
+        
+        if total_battery <= 0.0:
+            # Safe Fallback: Equal split in case of invalid values
+            ratios = {s: 1.0 / len(survivors) for s in survivors}
+        else:
+            ratios = {s: batteries[s] / total_battery for s in survivors}
+
+        # 3. Deterministically sort tasks by proximity to failed robot's last known waypoint
+        ref_coords = last_wp_coordinates or (0.0, 0.0)
+        uncompleted_waypoints_to_reallocate.sort(
+            key=lambda wp: math.hypot(wp["x"] - ref_coords[0], wp["y"] - ref_coords[1])
+        )
+
+        # 4. Perform proportional split calculation (Deterministic Split)
+        N = len(uncompleted_waypoints_to_reallocate)
+        allocated_counts = {}
+        remaining_tasks = N
+        for i, s in enumerate(survivors):
+            if i == len(survivors) - 1:
+                allocated_counts[s] = remaining_tasks
+            else:
+                count = int(round(N * ratios[s]))
+                allocated_counts[s] = count
+                remaining_tasks -= count
+
+        # 5. Populate pre-allocated lists inside payload
+        allocations = {s: [] for s in survivors}
+        task_idx = 0
+        for s in survivors:
+            count = allocated_counts[s]
+            allocations[s] = uncompleted_waypoints_to_reallocate[task_idx : task_idx + count]
+            task_idx += count
+
+        self.node.get_logger().warn(
+            f"[{self.node.robot_name}] DETERMINISTIC SPLIT. Survivors: {survivors}, "
+            f"Batteries: {batteries}, Split: {allocated_counts}"
+        )
+
         # Reallocation Payload
         payload = {
             "trigger_robot": self.node.robot_name,
             "failed_robot": failed_robot_name,
-            "override_regions": True,
-            "reference_coordinates": last_wp_coordinates,
-            "waypoints": uncompleted_waypoints_to_reallocate
+            "allocations": allocations
         }
         
         msg = String()
@@ -359,6 +410,11 @@ class WaypointSenderNode(Node):
         self.permanently_blocked_side_keys = set()
         self.deferred_sides_count = {}
 
+        # Registers for battery-aware allocation split and duplicate filters
+        self.peer_batteries = {}
+        self.reallocated_assigned_side_keys = set()
+        self.processed_failed_robots = set()
+
         self.side_lock_active = False
         
         self.active_target_dict: Optional[Dict[str, Any]] = {
@@ -380,6 +436,7 @@ class WaypointSenderNode(Node):
         self.amcl_recovery_accumulated_yaw = 0.0
         self.amcl_recovery_prev_yaw = 0.0
         self.amcl_recovery_stable_count = 0
+        self.amcl_recovery_stage = 1  # Track recovery stage (1: Local, 2: Global)
         
         self.nav_to_pose_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self.compute_path_client = ActionClient(self, ComputePathToPose, "compute_path_to_pose")
@@ -397,8 +454,8 @@ class WaypointSenderNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE
         )
-        # Using explicit absolute topic path to bypass any namespace relative resolution quirks
-        absolute_status_topic = f"/{self.robot_name}/status"
+        # Redirected to a dedicated nav_status topic to prevent battery monitor collision
+        absolute_status_topic = f"/{self.robot_name}/nav_status"
         self.status_pub = self.create_publisher(String, absolute_status_topic, qos_status)
         
         qos_claims = QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE)
@@ -408,10 +465,32 @@ class WaypointSenderNode(Node):
         self.create_subscription(Bool, "/mission_armed", self._mission_armed_callback, qos_transient)
         self.create_subscription(String, "/side_claims", self._side_claims_callback, qos_claims)
         self.create_subscription(String, "/shelf_arrived", self._shelf_arrived_callback, qos_claims)
-        self.create_subscription(String, "add_waypoints", self._add_waypoints_callback, 10)
+        
+        # Changed to absolute/global topic subscription to resolve namespaced isolation
+        self.create_subscription(String, "/add_waypoints", self._add_waypoints_callback, 10)
         
         # Using explicit absolute status topic matching the battery monitor publisher exactly
         self.create_subscription(String, absolute_status_topic, self._local_status_callback, qos_transient)
+
+        # Dynamically subscribe to all peer status topics to monitor battery and status consolidated JSONs
+        for peer_name in ROBOTS_SPECIFICATION.keys():
+            peer_status_topic = f"/{peer_name}/status"
+            self.create_subscription(
+                String,
+                peer_status_topic,
+                lambda msg, p_name=peer_name: self._peer_status_callback(msg, p_name),
+                qos_transient
+            )
+
+        # Dynamically subscribe to all peer status topics to monitor battery and status consolidated JSONs
+        for peer_name in ROBOTS_SPECIFICATION.keys():
+            peer_status_topic = f"/{peer_name}/status"
+            self.create_subscription(
+                String,
+                peer_status_topic,
+                lambda msg, p_name=peer_name: self._peer_status_callback(msg, p_name),
+                qos_transient
+            )
         
         self.recovery_mgr = RecoveryManager(
             node=self,
@@ -432,7 +511,31 @@ class WaypointSenderNode(Node):
         self.scan_delay_timer = None
         self._target_align_yaw: float = 0.0
 
+        self.amcl_recovery_attempts = 0
+
         self.get_logger().info(f"[{self.robot_name}] WaypointSender Ready. First target: {self.spec['first_item']}")
+
+    def _peer_status_callback(self, msg: String, peer_name: str):
+        """Asynchronously parses consolidated peer status updates to extract heartbeats and battery."""
+        try:
+            data = json.loads(msg.data)
+            status = data.get("status")
+            battery = float(data.get("battery", 100.0))
+            
+            # Cache peer battery level
+            self.peer_batteries[peer_name] = battery
+            
+            # Register active heartbeat
+            if status == "ACTIVE" and peer_name != self.robot_name:
+                now_ns = int(self.get_clock().now().nanoseconds)
+                self.health_monitor.register_heartbeat(peer_name, now_ns)
+                
+        except json.JSONDecodeError:
+            # Fallback for old/legacy raw status strings
+            if msg.data == "FAILED" and peer_name != self.robot_name:
+                self.peer_batteries[peer_name] = 0.0
+                self.get_logger().error(f"[{self.robot_name}] Legacy string indicating failure for {peer_name}")
+
 
     def _amcl_callback(self, msg: PoseWithCovarianceStamped):
         self.current_x = msg.pose.pose.position.x
@@ -458,15 +561,12 @@ class WaypointSenderNode(Node):
         if self.current_state == RobotState.FAILED:
             return
 
-        # Handle active tracking depending on the current state machine loop
-        if self.current_state == RobotState.AMCL_RECOVERY_SPIN:
-            self._accumulate_recovery_yaw()
-        else:
-            # Preventative active watchdog: trigger spin if localization drifts during active driving
-            if not self.is_localization_fresh and self.current_state in (
-                RobotState.NAVIGATING_TO_TARGET, RobotState.ALIGNING_YAW, RobotState.EVALUATING_PATH
-            ):
-                self._trigger_amcl_recovery_spin()
+        
+        # Preventative active watchdog: trigger spin if localization drifts during active driving
+        if not self.is_localization_fresh and self.current_state in (
+            RobotState.NAVIGATING_TO_TARGET, RobotState.ALIGNING_YAW, RobotState.EVALUATING_PATH
+        ):
+            self._trigger_amcl_recovery_spin()
 
     def _mission_armed_callback(self, msg: Bool):
         if msg.data and not self.mission_armed:
@@ -508,6 +608,7 @@ class WaypointSenderNode(Node):
         self.task_coord.process_arrival(robot_id, shelf_id)
 
     def _add_waypoints_callback(self, msg: String):
+        """Processes peer re-allocation split payload and registers tasks to deferred queue."""
         if self.current_state == RobotState.FAILED:
             return
             
@@ -519,16 +620,31 @@ class WaypointSenderNode(Node):
         failed_robot = data.get("failed_robot")
         if failed_robot == self.robot_name:
             return
+
+        # Deduplication filter: prevent duplicate processing of the same failed peer
+        if failed_robot in self.processed_failed_robots:
+            return
+        self.processed_failed_robots.add(failed_robot)
             
-        self.get_logger().error(f"[{self.robot_name}] Peer {failed_robot} offline. Transitioning to GREEDY Mode!")
-        self.greedy_mode = True
+        self.get_logger().error(
+            f"[{self.robot_name}] Peer {failed_robot} is OFFLINE. "
+            f"Registering reallocated tasks to deferred queue..."
+        )
         
-        ref = data.get("reference_coordinates")
-        if ref:
-            self.reallocation_ref_coords = (float(ref[0]), float(ref[1]))
-            
-        reallocated_wps = data.get("waypoints", [])
-        for wp in reallocated_wps:
+        # Extract pre-allocated tasks computed by the peer
+        allocations = data.get("allocations", {})
+        my_reallocated_wps = allocations.get(self.robot_name, [])
+        
+        if not my_reallocated_wps:
+            self.get_logger().info(f"[{self.robot_name}] Pre-allocation list is empty for me.")
+            return
+
+        self.get_logger().warn(
+            f"[{self.robot_name}] Assumed {len(my_reallocated_wps)} tasks from {failed_robot}. "
+            f"Will begin execution once original heuristic tasks are complete."
+        )
+        
+        for wp in my_reallocated_wps:
             item_name = wp["item_name"]
             if item_name not in self.task_coord.items_registry:
                 self.task_coord.items_registry[item_name] = {
@@ -540,12 +656,22 @@ class WaypointSenderNode(Node):
                     "sides": {wp["side_key"].split("_")[-1]: wp["side"]},
                     "done": set()
                 }
-                
-        if self.current_state in (RobotState.WAITING_FOR_MISSION, RobotState.IDLE):
-            self.current_state = RobotState.DECISION_PHASE
+            # Cache the specific reallocated side key to allow access during deferred mode
+            self.reallocated_assigned_side_keys.add(wp["side_key"])
+            
+        # Dynamically expand waypoint limit to accept the new reallocated workload
+        self.spec["waypoint_limit"] += len(my_reallocated_wps)
 
     def _local_status_callback(self, msg: String):
-        if msg.data == "FAILED" and self.current_state != RobotState.FAILED:
+        """Checks local battery telemetry payload to trigger failure cleanup."""
+        status_string = msg.data
+        try:
+            data = json.loads(msg.data)
+            status_string = data.get("status", msg.data)
+        except json.JSONDecodeError:
+            pass  # Fallback to legacy raw string
+            
+        if status_string == "FAILED" and self.current_state != RobotState.FAILED:
             self.get_logger().error(f"[{self.robot_name}] Local Status indicates FAILURE. Transitioning state.")
             self.current_state = RobotState.FAILED
             self._execute_failure_cleanup()
@@ -562,6 +688,9 @@ class WaypointSenderNode(Node):
         
         # 1. Immediately halt all physical motion
         self._stop_robot()
+
+        # Publish the FAILED status cleanly to the nav_status topic
+        self._publish_local_status("FAILED")
         
         # 2. Cancel active Nav2 goal trajectories asynchronously
         self._cancel_active_nav2_goal()
@@ -594,6 +723,16 @@ class WaypointSenderNode(Node):
             return
             
         self.recovery_mgr.tick(self.current_x, self.current_y)
+        
+        # State-Independent Corridor Mutex Watchdog: If we hold an active claim
+        # and we are IDLE (returning to spawn), release the corridor lock only 
+        # when we are physically outside of its boundary limits.
+        if self.current_state == RobotState.IDLE and self.claim_mgr.local_active_claim_key:
+            if self._has_cleared_current_corridor_segment():
+                self.get_logger().info(
+                    f"[{self.robot_name}] Physically cleared current corridor segment. Releasing segment lock safely."
+                )
+                self.claim_mgr.release_local_claim()
         
         if self.current_state == RobotState.BOOTSTRAP_AMCL:
             self._handle_bootstrap_amcl()
@@ -651,8 +790,39 @@ class WaypointSenderNode(Node):
             current_side_key=current_side,
             greedy_mode=self.greedy_mode,
             reallocation_reference_coords=self.reallocation_ref_coords,
-            deferred_side_keys=active_exclude_keys
+            deferred_side_keys=active_exclude_keys,
+            reallocated_assigned_side_keys=self.reallocated_assigned_side_keys
         )
+
+        # (Deferred Greedy) Gateway
+        if not target and self.reallocated_assigned_side_keys and not self.greedy_mode:
+            self.get_logger().error(
+                f"[{self.robot_name}] Original waypoint limit reached ({self.completed_waypoints_count}). "
+                f"Transitioning to GREEDY_MODE now to process battery-split reallocations!"
+            )
+            self.greedy_mode = True
+            
+            # Re-run target selection immediately with greedy_mode enabled
+            target = select_next_target(
+                items=self.task_coord.items_registry,
+                robot_name=self.robot_name,
+                current_x=self.current_x,
+                current_y=self.current_y,
+                owned_regions=self.spec["owned_regions"],
+                priority_dirs=self.spec["priority_directions"],
+                active_claims=self.claim_mgr.active_claims,
+                now_ns=now_ns,
+                completed_count=self.completed_waypoints_count,
+                waypoint_limit=self.spec["waypoint_limit"],
+                current_item_name=current_item,
+                current_side_key=current_side,
+                greedy_mode=True,
+                reallocation_reference_coords=self.reallocation_ref_coords,
+                deferred_side_keys=self.permanently_blocked_side_keys,  # Exclude only permanently blocked
+                reallocated_assigned_side_keys=self.reallocated_assigned_side_keys
+            )
+
+        # LAST RESORT RETRY FALLBACK:
 
         # LAST RESORT RETRY FALLBACK:
         # If no clean tasks remain but we have temporarily deferred tasks, retry them once before giving up
@@ -686,15 +856,53 @@ class WaypointSenderNode(Node):
                 self.deferred_side_keys.discard(side_key)
 
         if not target:
-            self.get_logger().info(f"[{self.robot_name}] Mission Quota Satisfied ({self.completed_waypoints_count}/{self.spec['waypoint_limit']}). Returning to Spawn.")
-            self.current_state = RobotState.IDLE
-            self._return_to_spawn_coordinates()
+            # Case A: If we reached our actual target waypoint limit, we are truly done!
+            if self.completed_waypoints_count >= self.spec["waypoint_limit"]:
+                # In both healthy and failure modes, we set state to IDLE and trigger spawn return.
+                # If greedy_mode is True, we release the lock instantly.
+                # If greedy_mode is False, we do NOT release the lock here; the background watchdog
+                # in _state_machine_tick will release it only when we physically exit the corridor.
+                if self.greedy_mode:
+                    self.get_logger().info(
+                        f"[{self.robot_name}] Mission Quota Satisfied in Greedy Mode. Releasing lock immediately."
+                    )
+                    self.claim_mgr.release_local_claim()
+                else:
+                    self.get_logger().info(
+                        f"[{self.robot_name}] Mission Quota Satisfied. Initiating return to spawn with background corridor tracking..."
+                    )
+                
+                # Publish the IDLE status cleanly to the nav_status topic
+                self._publish_local_status("IDLE")
+                self.current_state = RobotState.IDLE
+                self._return_to_spawn_coordinates()
+                return
+            
+            # Case B: If quota is NOT satisfied, but no tasks are free (locked by peers):
+            # Enter standby (THROTTLED_RETRY) and poll periodically every 5.0 seconds.
+            self.get_logger().warn(
+                f"[{self.robot_name}] No free targets available, but quota is NOT satisfied "
+                f"({self.completed_waypoints_count}/{self.spec['waypoint_limit']}). "
+                f"Remaining tasks are locked by peers. Entering Standby Mode..."
+            )
+            self._stop_robot()
+            self.current_state = RobotState.THROTTLED_RETRY
+            
+            # Dynamic standby polling timer to check lock releases
+            if self._retry_timer is not None:
+                self._retry_timer.cancel()
+            self._retry_timer = self.create_timer(5.0, self._on_throttled_retry_timeout)
             return
 
         self.active_target_dict = target
         mode_used = target["mode"]
         target_name = f"{target['item_name']}_{target['side_key']}_{target['section_label']}"
         self.get_logger().info(f"[{self.robot_name}] Target Acquired: {target_name} via {mode_used}")
+
+        # If we transition to a different side or a completely new item, release our old side-level claim first
+        new_side_key = target["side_key"]
+        if self.claim_mgr.local_active_claim_key and self.claim_mgr.local_active_claim_key != new_side_key:
+            self.claim_mgr.release_local_claim()
 
         self.claim_mgr.publish_local_claim("claim")
 
@@ -780,7 +988,19 @@ class WaypointSenderNode(Node):
         self.current_state = RobotState.NAVIGATING_TO_TARGET
         target_x, target_y = self.chosen_candidate
         
-        travel_yaw = math.atan2(target_y - self.current_y, target_x - self.current_x)
+        # Determine the coordinates of the final target shelf
+        final_x = self.active_target_dict["x"]
+        final_y = self.active_target_dict["y"]
+        
+        # If navigating to a temporary candidate, set its target yaw to match 
+        # the heading of the next segment (candidate to final target).
+        # This completely eliminates double-rotation jerkiness at the transition point!
+        if (target_x, target_y) != (final_x, final_y):
+            travel_yaw = math.atan2(final_y - target_y, final_x - target_x)
+        else:
+            # For final target approach, use standard travel direction yaw
+            travel_yaw = math.atan2(target_y - self.current_y, target_x - self.current_x)
+            
         qx, qy, qz, qw = self._yaw_to_quaternion(travel_yaw)
 
         goal_msg = NavigateToPose.Goal()
@@ -933,6 +1153,9 @@ class WaypointSenderNode(Node):
             self.scan_delay_timer.cancel()
             self.scan_delay_timer = None
             
+        # Reset recovery attempts counter on successful task completion
+        self.amcl_recovery_attempts = 0
+            
         self._publish_arrival_event()
         
         item_name = self.active_target_dict["item_name"]
@@ -995,8 +1218,13 @@ class WaypointSenderNode(Node):
         self.claim_mgr.publish_renewals()
 
     def _publish_local_status(self, status_string: str):
+        """Publishes JSON consolidated status representation to avoid type conflicts."""
+        payload = {
+            "status": status_string,
+            "battery": 100.0  # Initial default value for bootstrap status
+        }
         msg = String()
-        msg.data = status_string
+        msg.data = json.dumps(payload)
         self.status_pub.publish(msg)
 
     def _publish_completed_summary(self):
@@ -1058,75 +1286,143 @@ class WaypointSenderNode(Node):
         self.shelf_arrived_pub.publish(msg)
     
     def _trigger_amcl_recovery_spin(self):
-        """Suspends active Nav2 goals, triggers AMCL global reset, and starts controlled recovery spin."""
+        """Suspends active Nav2 goals and initiates Hierarchical Two-Stage Recovery."""
         self.get_logger().error(
             f"[{self.robot_name}] AMCL DIVERGENCE DETECTED (Sigma: {self.amcl_covariance_sigma:.3f} > {self.max_amcl_pos_sigma:.3f}). "
-            f"Suspending navigation to prevent collision. Initiating Global Particle Reset!"
+            f"Suspending navigation to prevent collision. Initiating Hierarchical Recovery Stage 1 (Local Spin)!"
         )
-        # 1. Gracefully abort current Nav2 active path
         self._cancel_active_nav2_goal()
         self._stop_robot()
         
-        # 2. Call AMCL global localization reinitialization service to scatter particles across the map
-        if self.global_loc_client.service_is_ready():
-            self.get_logger().info(f"[{self.robot_name}] Requesting AMCL global localization reset asynchronously.")
-            self.global_loc_client.call_async(Empty.Request())
-        else:
-            self.get_logger().warn(f"[{self.robot_name}] AMCL reinitialize_global_localization service is not ready!")
-        
-        # 3. Prevent the recovery manager from issuing conflicting stall-recoveries
         self.recovery_mgr.stop_monitoring()
         
-        # 4. Reset all tracking registers
-        self.amcl_recovery_accumulated_yaw = 0.0
-        self.amcl_recovery_prev_yaw = self.current_yaw
+        # Initialize Hierarchical State Parameters
+        self.amcl_recovery_stage = 1  # Start with Stage 1 (Local Spin without resetting particles)
+        self.amcl_recovery_start_time = self.get_clock().now().nanoseconds / 1e9
         self.amcl_recovery_stable_count = 0
-        
-        # 5. Jump to the recovery spin state
         self.current_state = RobotState.AMCL_RECOVERY_SPIN
-
-    def _accumulate_recovery_yaw(self):
-        """Accumulates relative rotation delta safely handling the wrapping between -PI and PI."""
-        diff = self.current_yaw - self.amcl_recovery_prev_yaw
-        diff = math.atan2(math.sin(diff), math.cos(diff))
-        self.amcl_recovery_accumulated_yaw += abs(diff)
-        self.amcl_recovery_prev_yaw = self.current_yaw
+        
+        # Increment recovery attempts for this target
+        self.amcl_recovery_attempts += 1
 
     def _handle_amcl_recovery_tick(self):
-        """10Hz tick processing relative rotation accumulation and safe exit conditions."""
-        # Condition 1: Verify if the robot has safely rotated at least 180 degrees (PI radians)
-        has_turned_180_deg = self.amcl_recovery_accumulated_yaw >= math.pi
+        """10Hz tick processing relative rotation duration and safe exit conditions for hierarchical stages."""
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        elapsed_sec = now_sec - self.amcl_recovery_start_time
         
-        # Condition 2: Check if AMCL covariance has remained stable below threshold for 3 ticks
+        has_turned_enough = elapsed_sec >= 8.0
         is_localization_stable = self.amcl_recovery_stable_count >= 3
         
-        # Safe Early Exit Sweet Spot: Exit only if turned 180 deg AND stable
-        if has_turned_180_deg and is_localization_stable:
+        # Success check: If local or global AMCL has successfully stabilized
+        if has_turned_enough and is_localization_stable:
             self.get_logger().info(
-                f"[{self.robot_name}] AMCL RECOVERY SUCCESSFUL! "
-                f"Accumulated Spin: {math.degrees(self.amcl_recovery_accumulated_yaw):.1f} deg. "
+                f"[{self.robot_name}] AMCL RECOVERY SUCCESSFUL in Stage {self.amcl_recovery_stage}! "
+                f"Elapsed Spin: {elapsed_sec:.1f}s. "
                 f"Sigma: {self.amcl_covariance_sigma:.3f}. Resuming navigation via DECISION_PHASE."
             )
             self._stop_robot()
             self.current_state = RobotState.DECISION_PHASE
             return
             
-        # Hard Timeout Gate: If robot spun full 360 degrees plus margin (6.45 rad) without convergence
-        if self.amcl_recovery_accumulated_yaw >= 6.45:
-            self.get_logger().error(
-                f"[{self.robot_name}] AMCL RECOVERY EXHAUSTED! Turned 360 degrees without convergence. "
-                f"Transitioning to DECISION_PHASE to replan/retry target."
-            )
+        # Timeout/Transition Check at 22.0 seconds
+        if elapsed_sec >= 22.0:
             self._stop_robot()
-            self.current_state = RobotState.DECISION_PHASE
-            return
             
+            # Stage 1 Timeout: If Stage 1 (Local Spin) failed, initiate Stage 2 (Global Reset Fallback)
+            if self.amcl_recovery_stage == 1:
+                self.get_logger().warn(
+                    f"[{self.robot_name}] Stage 1 (Local Spin) Failed to converge in 22 seconds. "
+                    f"Initiating Stage 2 (Global Reset Fallback)!"
+                )
+                self.amcl_recovery_stage = 2
+                self.amcl_recovery_start_time = self.get_clock().now().nanoseconds / 1e9
+                self.amcl_recovery_stable_count = 0
+                
+                # Request AMCL global localization reset asynchronously
+                if self.global_loc_client.service_is_ready():
+                    self.get_logger().info(f"[{self.robot_name}] Requesting AMCL global localization reset asynchronously.")
+                    self.global_loc_client.call_async(Empty.Request())
+                else:
+                    self.get_logger().warn(f"[{self.robot_name}] AMCL reinitialize_global_localization service is not ready!")
+                return
+            
+            # Stage 2 Timeout: If even Stage 2 (Global Reset) failed to converge
+            else:
+                self.get_logger().error(
+                    f"[{self.robot_name}] Stage 2 (Global Reset) Failed to converge. Entire recovery sequence exhausted."
+                )
+                if self.amcl_recovery_attempts >= 2:
+                    self.get_logger().error(
+                        f"[{self.robot_name}] Recovery attempts exhausted twice. Deferring task to break deadlock."
+                    )
+                    self.amcl_recovery_attempts = 0
+                    self._defer_active_task()
+                else:
+                    self.get_logger().error(
+                        f"[{self.robot_name}] Retrying target via DECISION_PHASE."
+                    )
+                    self.current_state = RobotState.DECISION_PHASE
+                return
+                
         # Publish slow, controlled, safe rotation on cmd_vel
         cmd = Twist()
         cmd.angular.z = 0.3  # Safe speed (approx 17 degrees per second)
         self.cmd_vel_pub.publish(cmd)
 
-
+    def _has_cleared_current_corridor_segment(self) -> bool:
+        """Determines if the robot has physically cleared the boundary limits of its last inspected corridor."""
+        if not self.active_target_dict:
+            return True
+            
+        side_spec = self.active_target_dict.get("side_spec")
+        if not side_spec:
+            return True
+            
+        points = side_spec.get("section_points_template", [])
+        if not points:
+            return True
+            
+        # Get global endpoints of the corridor approach line
+        pt_a = points[0]
+        pt_b = points[-1]
+        
+        ax, ay = pt_a[0], pt_a[1]
+        bx, by = pt_b[0], pt_b[1]
+        
+        # Corridor vector (v) and length
+        vx = bx - ax
+        vy = by - ay
+        v_length = math.hypot(vx, vy)
+        
+        if v_length < 1e-4:
+            return True
+            
+        # Unit direction vector (u) of the corridor
+        ux = vx / v_length
+        uy = vy / v_length
+        
+        # Vector from A to robot position (AP)
+        apx = self.current_x - ax
+        apy = self.current_y - ay
+        
+        # Project AP onto unit vector u to get linear progress t
+        t = apx * ux + apy * uy
+        
+        # Retrieve physical offset specs to extend corridor bounds past the outer section points
+        item_name = self.active_target_dict.get("item_name", "")
+        item = self.task_coord.items_registry.get(item_name, {})
+        item_type = item.get("type", "shelf")
+        
+        # Half section step allows the envelope to cover the full physical length of the shelf
+        half_step = 2.25 if item_type == "shelf_big" else 0.45
+        safety_margin = 0.5  # Extra 0.5 meters to ensure the robot has fully cleared the corner
+        
+        # Check if the robot has exited the extended longitudinal limits of the corridor
+        exit_past_a = t < -(half_step + safety_margin)
+        exit_past_b = t > (v_length + half_step + safety_margin)
+        
+        return exit_past_a or exit_past_b
+    
 def main(args=None):
     rclpy.init(args=args)
     node = WaypointSenderNode()

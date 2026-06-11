@@ -10,7 +10,7 @@ and dynamic target reallocation (Greedy mode) for robust multi-agent coordinatio
 import math
 from typing import Dict, List, Tuple, Any, Optional, Set
 
-from .config import ITEM_SIDE_OWNERS, MOBILE_CLUSTER_NAME
+from .config import ITEM_SIDE_OWNERS, MOBILE_CLUSTER_NAME, SHARED_CORRIDORS
 from .sdf_parser import classify_cartesian_region
 
 
@@ -41,14 +41,16 @@ def is_item_in_direction(
     abs_dx = abs(dx)
     abs_dy = abs(dy)
     
+    # Widened conic check from 90 to 120 degrees (slope factor 0.58) to accommodate rectangular aisles
+    cone_factor = 0.58
     if direction == "north":
-        return dy >= abs_dx - epsilon and dy > 0
+        return dy >= (abs_dx * cone_factor) - epsilon and dy > 0
     elif direction == "south":
-        return -dy >= abs_dx - epsilon and dy < 0
+        return -dy >= (abs_dx * cone_factor) - epsilon and dy < 0
     elif direction == "east":
-        return dx >= abs_dy - epsilon and dx > 0
+        return dx >= (abs_dy * cone_factor) - epsilon and dx > 0
     elif direction == "west":
-        return -dx >= abs_dy - epsilon and dx < 0
+        return -dx >= (abs_dy * cone_factor) - epsilon and dx < 0
     return False
 
 
@@ -56,41 +58,51 @@ def is_item_in_direction(
 # 2. CLAIM AND LEASE VALIDATORS
 # ==============================================================================
 
-def is_section_claimed_by_other(
-    section_key: str, 
+def is_side_claimed_by_other(
+    side_key: str, 
     robot_name: str, 
     active_claims: Dict[str, Dict[str, Any]], 
-    now_ns: int
+    now_ns: int,
+    greedy_mode: bool = False
 ) -> bool:
     """
-    Verifies if a specific item side is currently claimed by another active robot.
+    Verifies if a specific item side (entire corridor segment) is currently claimed by another active robot.
 
-    Includes a robust timeout (expiration) check to prevent permanent deadlocks
-    if a robot crashes or goes offline.
+    Includes a robust timeout check to prevent permanent deadlocks if a peer robot crashes.
 
     Args:
-        side_key: Unique identifier of the side (e.g., 'shelf_2_yplus').
+        side_key: Unique identifier of the side corridor (e.g., 'shelf_big_3_xminus').
         robot_name: Name of the checking robot (e.g., 'robot1').
         active_claims: Global dict of active claims.
         now_ns: Current system time in nanoseconds.
 
     Returns:
-        True if the side is actively claimed by another robot, False otherwise.
+        True if the entire side/corridor is actively claimed by another robot, False otherwise.
     """
     if not active_claims:
         return False
     
-    claim = active_claims.get(section_key)
-    if not claim:
-        return False
-        
-    # Check lease expiration (heartbeat timeout)
-    expire_at_ns = int(claim.get("expire_at_ns", 0))
-    if expire_at_ns <= now_ns:
-        return False  # Claim has expired, side is now free
-        
-    # Active claim belongs to another robot
-    return claim.get("robot_id") != robot_name
+    # 1. Direct Side Check: Is the exact target side claimed by another robot?
+    claim = active_claims.get(side_key)
+    if claim:
+        expire_at_ns = int(claim.get("expire_at_ns", 0))
+        if expire_at_ns > now_ns and claim.get("robot_id") != robot_name:
+            return True
+            
+    # 2. Corridor Mutex Check: If system is healthy, check the opposite side of the narrow corridor
+    if not greedy_mode and SHARED_CORRIDORS:
+        corridor_id = SHARED_CORRIDORS.get(side_key)
+        if corridor_id:
+            # Find the peer side key sharing this corridor
+            for peer_side, cid in SHARED_CORRIDORS.items():
+                if cid == corridor_id and peer_side != side_key:
+                    peer_claim = active_claims.get(peer_side)
+                    if peer_claim:
+                        peer_expire = int(peer_claim.get("expire_at_ns", 0))
+                        if peer_expire > now_ns and peer_claim.get("robot_id") != robot_name:
+                            return True
+                            
+    return False
 
 
 # ==============================================================================
@@ -103,24 +115,35 @@ def get_ordered_sections(
     current_y: float
 ) -> List[Tuple[float, float, str]]:
     """
-    Orders section points starting from the one closest to the robot's position.
-
-    Implements the "en yakın section" (closest section) rule. If the end of 
-    the template is closer than the beginning, it reverses the order to ensure 
-    a smooth continuous sweep.
-
-    Args:
-        side_spec: Target side specification dict.
-        current_x: Robot's current coordinate X.
-        current_y: Robot's current coordinate Y.
-
-    Returns:
-        List of section points (gx, gy, label) ordered nearest-first.
+    Orders section points starting from the one closest to the robot's position,
+    with physics-informed dead-end wall avoidance and optimal side-to-side transitions.
     """
     points = side_spec.get("section_points_template", [])
     if not points:
         return []
         
+    # Calculate physical layout averages of the shelf points
+    avg_x = sum(p[0] for p in points) / len(points)
+    avg_y = sum(p[1] for p in points) / len(points)
+
+    # 1. Physics-Informed Wall Rule: Near Right Wall (X > 10.0). East side is a dead end.
+    # For right wall shelves, force yplus to sweep Westward (D->A) and yminus to sweep Eastward (A->D).
+    # This guarantees the robot is always positioned at the open aisle (West) during side-transitions!
+    if avg_x > 10.0 and abs(points[0][0] - points[-1][0]) > 0.1:
+        if "yplus" in side_spec["key"]:
+            return sorted(points, key=lambda p: p[0], reverse=True)  # Westward sweep (D first)
+        else:
+            return sorted(points, key=lambda p: p[0])  # Eastward sweep (A first)
+
+    # 2. Physics-Informed Wall Rule: Near Top Wall (Y > 15.0) for vertical shelves. North side is a dead end.
+    # Force xplus to sweep Southward (descending Y) and xminus to sweep Northward (ascending Y)
+    if avg_y > 15.0 and abs(points[0][1] - points[-1][1]) > 0.1:
+        if "xplus" in side_spec["key"]:
+            return sorted(points, key=lambda p: p[1])  # Northward sweep
+        else:
+            return sorted(points, key=lambda p: p[1], reverse=True)  # Southward sweep
+            
+    # 3. Standard Euclidean Proximity Fallback (for non-blocked open aisle shelves)
     distance_to_start = calculate_distance(current_x, current_y, points[0][0], points[0][1])
     distance_to_end = calculate_distance(current_x, current_y, points[-1][0], points[-1][1])
     
@@ -186,7 +209,8 @@ def select_next_target(
     current_side_key: Optional[str] = None,
     greedy_mode: bool = False,
     reallocation_reference_coords: Optional[Tuple[float, float]] = None,
-    deferred_side_keys: Optional[Set[str]] = None  # Resolved: S6 parameter injection
+    deferred_side_keys: Optional[Set[str]] = None,
+    reallocated_assigned_side_keys: Optional[Set[str]] = None  # Battery-split filter
 ) -> Optional[Dict[str, Any]]:
     """
     Main State-Free Target Decision Tree.
@@ -248,19 +272,20 @@ def select_next_target(
     if current_item_name:
         item = items.get(current_item_name)
         if item:
-            for side_name, side_spec in item["sides"].items():
+            # Sort sides by proximity to current robot position to prevent backtracking
+            sorted_sides = sorted(
+                item["sides"].values(),
+                key=lambda s: calculate_distance(current_x, current_y, s["approach_x"], s["approach_y"])
+            )
+            for side_spec in sorted_sides:
                 # Skip if already completed
                 if is_side_completed(item, side_spec):
                     continue
                     
-                # Skip if claimed by other robots (Section-based check)
-                ordered = get_ordered_sections(side_spec, current_x, current_y)
-                uncompleted_idx = get_next_uncompleted_section_index(item, side_spec, ordered)
-                if uncompleted_idx is not None:
-                    tx, ty, label = ordered[uncompleted_idx]
-                    section_key = f"{side_spec['key']}_{label}"
-                    if is_section_claimed_by_other(section_key, robot_name, active_claims, now_ns):
-                        continue
+                # Skip if the entire side (corridor segment) is claimed by other robots
+                # Bypasses physical corridor cross-checking automatically if greedy_mode is True
+                if is_side_claimed_by_other(side_spec["key"], robot_name, active_claims, now_ns, greedy_mode):
+                    continue
                     
                 # Verify Static Item Ownership (unless in Greedy Recovery Mode)
                 if not greedy_mode:
@@ -283,9 +308,9 @@ def select_next_target(
                         "mode": "SAME_ITEM_SIDE_TRANSITION"
                     }
 
-    # ==========================================================================
+    # ==============================================================================
     # RULE 3: GREEDY ALLOCATION MODE (Active Failure/Reallocation Recovery)
-    # ==========================================================================
+    # ==============================================================================
     if greedy_mode:
         ref_x = reallocation_reference_coords[0] if reallocation_reference_coords else current_x
         ref_y = reallocation_reference_coords[1] if reallocation_reference_coords else current_y
@@ -298,8 +323,23 @@ def select_next_target(
                 if is_side_completed(item, side_spec):
                     continue
                 
-                # Resolved S6: Exclude persistently blocked/deferred tasks from allocation
+                # Exclude permanently blocked/deferred tasks from allocation
                 if deferred_side_keys and side_spec["key"] in deferred_side_keys:
+                    continue
+
+                # Water-tight Boundary Check: Verify static owner to ensure strict loading balance
+                static_owner = ITEM_SIDE_OWNERS.get(side_spec["key"])
+                if static_owner and static_owner != robot_name:
+                    # If this side belongs to a failed robot, we ONLY take it if it was assigned to us during split
+                    if reallocated_assigned_side_keys is not None:
+                        if side_spec["key"] not in reallocated_assigned_side_keys:
+                            continue  # Belongs to failed robot but split assigned it to another survivor
+                    else:
+                        continue  # Safe fallback: split info missing
+
+                # Corridor Check: Verify if the target side is already claimed by another survivor.
+                # Setting greedy_mode=True bypasses the cross-corridor check as requested.
+                if is_side_claimed_by_other(side_spec["key"], robot_name, active_claims, now_ns, greedy_mode=True):
                     continue
 
                 ordered = get_ordered_sections(side_spec, ref_x, ref_y)
@@ -307,12 +347,6 @@ def select_next_target(
                 
                 if uncompleted_idx is not None:
                     tx, ty, label = ordered[uncompleted_idx]
-                    
-                    section_key = f"{side_spec['key']}_{label}"
-                    
-                    if is_section_claimed_by_other(section_key, robot_name, active_claims, now_ns):
-                        continue
-                        
                     dist = calculate_distance(ref_x, ref_y, tx, ty)
                     if dist < min_distance:
                         min_distance = dist
@@ -343,7 +377,7 @@ def select_next_target(
     if len(priority_dirs) >= 1:
         dir1 = priority_dirs[0]
         candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-            items, robot_name, current_x, current_y, current_region, dir1, active_claims, now_ns, deferred_side_keys
+            items, robot_name, current_x, current_y, current_region, dir1, active_claims, now_ns, deferred_side_keys, greedy_mode=greedy_mode
         )
         if candidate_item:
             return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_DIR1")
@@ -356,7 +390,7 @@ def select_next_target(
         
         for region in owned_regions:
             candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-                items, robot_name, current_x, current_y, region, dir2, active_claims, now_ns, deferred_side_keys
+                items, robot_name, current_x, current_y, region, dir2, active_claims, now_ns, deferred_side_keys, greedy_mode=greedy_mode
             )
             if candidate_item:
                 tx, ty, _ = candidate_sec
@@ -370,14 +404,14 @@ def select_next_target(
 
     # 3. Step: Fallback search ONLY inside CURRENT region (Direction-Independent)
     candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-        items, robot_name, current_x, current_y, current_region, None, active_claims, now_ns, deferred_side_keys
+        items, robot_name, current_x, current_y, current_region, None, active_claims, now_ns, deferred_side_keys, reallocated_assigned_side_keys, greedy_mode=greedy_mode
     )
     if candidate_item:
         return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_REGION_FALLBACK")
 
     # 4. Step: Region/Direction-Independent Fallback
     candidate_item, candidate_side, candidate_sec = _search_closest_item_in_direction_and_region(
-        items, robot_name, current_x, current_y, None, None, active_claims, now_ns, deferred_side_keys
+        items, robot_name, current_x, current_y, None, None, active_claims, now_ns, deferred_side_keys, reallocated_assigned_side_keys, greedy_mode=greedy_mode
     )
     if candidate_item:
         return _build_target_response(candidate_item, candidate_side, candidate_sec, "HEURISTIC_WORLD_FALLBACK")
@@ -394,7 +428,9 @@ def _search_closest_item_in_direction_and_region(
     direction: Optional[str],
     active_claims: Dict[str, Dict[str, Any]],
     now_ns: int,
-    deferred_side_keys: Optional[Set[str]] = None  # Resolved S6 parameter mapping
+    deferred_side_keys: Optional[Set[str]] = None,
+    reallocated_assigned_side_keys: Optional[Set[str]] = None,
+    greedy_mode: bool = False
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Tuple[float, float, str]]]:
     closest_item_name = None
     closest_side_spec = None
@@ -405,36 +441,65 @@ def _search_closest_item_in_direction_and_region(
         if region is not None and item["region"] != region:
             continue
 
+        # Calculate the physically closest point on the item's 2D footprint segment to the robot
+        item_type = item.get("type", "shelf")
+        cx = item["x"]
+        cy = item["y"]
+
+        if item_type == "shelf_big":
+            # Vertically aligned shelf (length 18.0m, Y ranges from cy - 9.0 to cy + 9.0)
+            closest_x = cx
+            closest_y = max(cy - 9.0, min(current_y, cy + 9.0))
+        elif item_type == "shelf":
+            # Horizontally aligned shelf (width 3.6m, X ranges from cx - 1.8 to cx + 1.8)
+            closest_x = max(cx - 1.8, min(current_x, cx + 1.8))
+            closest_y = cy
+        else:
+            # Pallets or others, treat as a single point
+            closest_x = cx
+            closest_y = cy
+
+        # Apply strict 90-degree cardinal direction filter to the closest physical point of the item
+        if direction is not None:
+            if not is_item_in_direction(current_x, current_y, closest_x, closest_y, direction):
+                continue
+
         best_side_spec = None
         best_section_pt = None
         min_side_distance = float('inf')
 
-        for side_name, side_spec in item["sides"].items():
+        # Sort sides of this valid item by proximity to prevent backtracking within the same item
+        sorted_sides = sorted(
+            item["sides"].values(),
+            key=lambda s: calculate_distance(current_x, current_y, s["approach_x"], s["approach_y"])
+        )
+
+        for side_spec in sorted_sides:
             if is_side_completed(item, side_spec):
                 continue
                 
-            # Resolved S6: Exclude deferred tasks from standard sweeps
+            # Exclude deferred tasks from standard sweeps
             if deferred_side_keys and side_spec["key"] in deferred_side_keys:
                 continue
                 
             static_owner = ITEM_SIDE_OWNERS.get(side_spec["key"])
             if static_owner and static_owner != robot_name:
+                # In standard heuristic sweeps, we only permit our own static assigned tasks.
+                if reallocated_assigned_side_keys is not None and side_spec["key"] in reallocated_assigned_side_keys:
+                    pass  # Permitted reallocated task
+                else:
+                    continue
+
+            # Skip if the entire side (corridor segment) is currently claimed by another robot
+            if is_side_claimed_by_other(side_spec["key"], robot_name, active_claims, now_ns, greedy_mode):
                 continue
 
             ordered = get_ordered_sections(side_spec, current_x, current_y)
             uncompleted_idx = get_next_uncompleted_section_index(item, side_spec, ordered)
             if uncompleted_idx is not None:
-                sec_pt = ordered[uncompleted_idx]
-                
-                section_key = f"{side_spec['key']}_{sec_pt[2]}"
-                if is_section_claimed_by_other(section_key, robot_name, active_claims, now_ns):
-                    continue  
-                
-                # Validate direction against section approach coordinates (sec_pt) instead of item center
-                if direction is not None:
-                    if not is_item_in_direction(current_x, current_y, sec_pt[0], sec_pt[1], direction):
-                        continue
+                sec_pt = ordered[uncompleted_idx]  
 
+                # Side-Level Proximity: No direction check on section points here, we choose the absolute closest uncompleted side!
                 dist = calculate_distance(current_x, current_y, sec_pt[0], sec_pt[1])
                 if dist < min_side_distance:
                     min_side_distance = dist
@@ -450,7 +515,6 @@ def _search_closest_item_in_direction_and_region(
                 closest_section_pt = best_section_pt
 
     return closest_item_name, closest_side_spec, closest_section_pt
-
 
 def _build_target_response(
     item_name: str, 

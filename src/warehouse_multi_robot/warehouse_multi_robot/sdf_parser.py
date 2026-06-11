@@ -263,11 +263,11 @@ def build_mobile_cluster_sides(mobiles_list: List[Dict[str, Any]]) -> Dict[str, 
     """
     Groups dynamic mobile pallet boxes into a single 'mobile_cluster' entity.
 
-    The pallets align along the Y axis, and the sweep runs left-to-right (ordered by X).
+    The pallets align along the Y axis, and the sweep runs sequentially from North to South.
     """
     sides = {}
-    # Order pallets from West to East (lowest X to highest X)
-    sorted_mobiles = sorted(mobiles_list, key=lambda m: m["x"])
+    # Sort mobile pallets from North to South (decreasing Y coordinate values)
+    sorted_mobiles = sorted(mobiles_list, key=lambda m: m["y"], reverse=True)
     labels = ["A", "B", "C"]
     
     for side_name in ["xminus", "xplus"]:

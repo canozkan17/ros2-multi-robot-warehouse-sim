@@ -153,3 +153,18 @@ SPECIAL_PALLET_APPROACHES = {
 MOBILE_PALLET_GROUP = ["pallet_box_mobile", "pallet_box_mobile_0", "pallet_box_mobile_1"]
 MOBILE_PALLET_SET = set(MOBILE_PALLET_GROUP)
 MOBILE_CLUSTER_NAME = "mobile_cluster"
+
+# ==============================================================================
+# 9. CORRIDORS
+# ==============================================================================
+# Map opposite shelf-sides that share the exact same narrow physical corridor
+SHARED_CORRIDORS = {
+    "shelf_big_0_xplus": "corridor_west",
+    "shelf_big_4_xminus": "corridor_west",
+    
+    "shelf_big_4_xplus": "corridor_mid",
+    "shelf_big_3_xminus": "corridor_mid",
+    
+    "shelf_big_3_xplus": "corridor_east",
+    "shelf_big_2_xminus": "corridor_east"
+}

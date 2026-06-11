@@ -2,10 +2,10 @@ robot3:
   amcl:
     ros__parameters:
       use_sim_time: True
-      alpha1: 0.15
-      alpha2: 0.15
-      alpha3: 0.15
-      alpha4: 0.15
+      alpha1: 0.20
+      alpha2: 0.20
+      alpha3: 0.20
+      alpha4: 0.20
       alpha5: 0.15
       base_frame_id: "robot3/base_footprint"
       global_frame_id: "map"
@@ -18,7 +18,7 @@ robot3:
       robot_model_type: "nav2_amcl::DifferentialMotionModel"
       transform_tolerance: 0.5
       update_min_a: 0.05
-      update_min_d: 0.10
+      update_min_d: 0.05
       z_hit: 0.80
       z_max: 0.05
       z_rand: 0.20
@@ -97,12 +97,15 @@ robot3:
         use_regulated_linear_velocity_scaling: true
         use_fixed_curvature_lookahead: false
         curvature_reg_k: 2.5
-        use_cost_regulated_linear_velocity_scaling: false
+        use_cost_regulated_linear_velocity_scaling: true
+        cost_scaling_dist: 0.40
+        cost_scaling_gain: 1.0
+        inflation_cost_scaling_factor: 5.0
         regulated_linear_scaling_min_radius: 0.75
         regulated_linear_scaling_min_speed: 0.15
         use_rotate_to_heading: true
         allow_reversing: false
-        rotate_to_heading_min_angle: 0.50
+        rotate_to_heading_min_angle: 0.785
         max_angular_accel: 3.2
         max_robot_pose_search_dist: 10.0
   
@@ -221,14 +224,19 @@ robot3:
       spin:
         plugin: "nav2_behaviors::Spin"
         simulate_ahead_time: 2.0
+        odom_frame: robot3/odom 
       backup:
         plugin: "nav2_behaviors::BackUp"
+        odom_frame: robot3/odom 
       drive_on_heading:
         plugin: "nav2_behaviors::DriveOnHeading"
+        odom_frame: robot3/odom 
       wait:
         plugin: "nav2_behaviors::Wait"
-      global_frame: map
+        glo: robot3/odom 
+      global_frame: robot3/map
       robot_base_frame: robot3/base_link
+      odom_frame: robot3/odom 
       transform_tolerance: 0.1
       use_sim_time: true
       simulate_ahead_time: 2.0
@@ -278,7 +286,7 @@ robot3:
       odom0: /robot3/odom
       odom0_config: [false, false, false,
                      false, false, false,
-                     true,  true,  false,
+                     true,  false,  false,
                      false, false, true,
                      false, false, false]
       imu0: /robot3/imu
@@ -287,5 +295,5 @@ robot3:
                     false, false, false,   
                     false, false, false,
                     false, false, true,   
-                    true,  false, false]  
+                    false,  false, false]  
       imu0_remove_gravitational_acceleration: true
