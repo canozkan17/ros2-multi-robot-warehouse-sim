@@ -41,7 +41,6 @@ class RobotState(Enum):
     BOOTSTRAP_AMCL = "BOOTSTRAP_AMCL"
     WAITING_FOR_MISSION = "WAITING_FOR_MISSION"
     DECISION_PHASE = "DECISION_PHASE"
-    EVALUATING_PATH = "EVALUATING_PATH"
     NAVIGATING_TO_TARGET = "NAVIGATING_TO_TARGET"
     ALIGNING_YAW = "ALIGNING_YAW"
     SCANNING = "SCANNING"
@@ -906,83 +905,11 @@ class WaypointSenderNode(Node):
 
         self.claim_mgr.publish_local_claim("claim")
 
-        # Unlock side sweep tracking if we transition to a different side or a completely new item
-        if mode_used != "SAME_SIDE_LOCK":
-            self.side_lock_active = False
-
-        # Only bypass candidate generation if actively locked on the side AND performing same-side sweeps
-        if self.side_lock_active and mode_used in ("SAME_SIDE_LOCK", "SAME_ITEM_SIDE_TRANSITION"):
-            self.chosen_candidate = (target["x"], target["y"])
-            self.recovery_mgr.start_monitoring(self.current_x, self.current_y, is_candidate=False)
-            self._dispatch_navigation()
-        else:
-            self._prepare_candidates(target["x"], target["y"])
-
-    def _prepare_candidates(self, target_x: float, target_y: float):
-        cand_a = (self.current_x, target_y)  # Moves strictly vertically (Y changes, X constant)
-        cand_b = (target_x, self.current_y)  # Moves strictly horizontally (X changes, Y constant)
-        
-        if self.robot_name == "robot2":
-            self.candidate_queue = [cand_b, cand_a]
-        else:
-            self.candidate_queue = [cand_a, cand_b]
-            
-        self.evaluating_candidate_index = 0
-        self.current_state = RobotState.EVALUATING_PATH
-        self._evaluate_next_candidate()
-
-    def _evaluate_next_candidate(self):
-        if self.evaluating_candidate_index >= len(self.candidate_queue):
-            self.get_logger().warn(f"[{self.robot_name}] Both candidates blocked. Heading direct.")
-            self.chosen_candidate = (self.active_target_dict["x"], self.active_target_dict["y"])
-            self.recovery_mgr.start_monitoring(self.current_x, self.current_y, is_candidate=False)
-            self._dispatch_navigation()
-            return
-
-        cand_x, cand_y = self.candidate_queue[self.evaluating_candidate_index]
-        travel_yaw = math.atan2(cand_y - self.current_y, cand_x - self.current_x)
-        qx, qy, qz, qw = self._yaw_to_quaternion(travel_yaw)
-
-        goal_msg = ComputePathToPose.Goal()
-        goal_msg.goal = self._create_pose_stamped(cand_x, cand_y, qx, qy, qz, qw)
-        goal_msg.use_start = False
-        
-        future = self.compute_path_client.send_goal_async(goal_msg)
-        future.add_done_callback(self._on_path_request_accepted)
-
-    def _on_path_request_accepted(self, future):
-        # Gatekeeper: Prevent late asynchronous callback execution after failure or during active recovery spin
-        if self.current_state in (RobotState.FAILED, RobotState.AMCL_RECOVERY_SPIN):
-            return
-            
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self._next_candidate_fail()
-            return
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._on_path_result_received)
-
-    def _on_path_result_received(self, future):
-        # Gatekeeper: Prevent late asynchronous callback execution after failure or during active recovery spin
-        if self.current_state in (RobotState.FAILED, RobotState.AMCL_RECOVERY_SPIN):
-            return
-            
-        try:
-            result = future.result().result
-            if result and len(result.path.poses) > 0:
-                self.chosen_candidate = self.candidate_queue[self.evaluating_candidate_index]
-                self.get_logger().info(f"[{self.robot_name}] Candidate index {self.evaluating_candidate_index} is VALID and REACHABLE.")
-                self.recovery_mgr.start_monitoring(self.current_x, self.current_y, is_candidate=True)
-                self._dispatch_navigation()
-                return
-        except Exception as e:
-            self.get_logger().error(f"[{self.robot_name}] Candidate Evaluation Exception: {e}")
-            
-        self._next_candidate_fail()
-
-    def _next_candidate_fail(self):
-        self.evaluating_candidate_index += 1
-        self._evaluate_next_candidate()
+        # Set the target coordinates as the direct navigation goal (Ablation optimization)
+        # Completely bypassing the legacy Manhattan-style candidate routing mechanism.
+        self.chosen_candidate = (target["x"], target["y"])
+        self.recovery_mgr.start_monitoring(self.current_x, self.current_y, is_candidate=False)
+        self._dispatch_navigation()
 
     def _dispatch_navigation(self):
         self.current_state = RobotState.NAVIGATING_TO_TARGET

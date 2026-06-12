@@ -86,7 +86,7 @@ robot2:
         min_lookahead_dist: 0.35
         max_lookahead_dist: 1.20
         lookahead_time: 1.5
-        rotate_to_heading_angular_vel: 1.0
+        rotate_to_heading_angular_vel: 0.6
         transform_tolerance: 0.1
         use_velocity_scaled_lookahead_dist: true
         min_approach_linear_velocity: 0.03
@@ -105,7 +105,7 @@ robot2:
         use_rotate_to_heading: true
         allow_reversing: false
         rotate_to_heading_min_angle: 0.785
-        max_angular_accel: 3.2
+        max_angular_accel: 1.5
         max_robot_pose_search_dist: 10.0
   
   local_costmap:
@@ -223,6 +223,7 @@ robot2:
       spin:
         plugin: "nav2_behaviors::Spin"
         simulate_ahead_time: 2.0
+        odom_frame: robot2/odom
       backup:
         plugin: "nav2_behaviors::BackUp"
         odom_frame: robot2/odom 
@@ -232,7 +233,7 @@ robot2:
       wait:
         plugin: "nav2_behaviors::Wait"
         odom_frame: robot2/odom 
-      global_frame: robot2/map
+      global_frame: robot2/odom
       robot_base_frame: robot2/base_link
       odom_frame: robot2/odom 
       transform_tolerance: 0.1
@@ -261,8 +262,8 @@ robot2:
       feedback: "OPEN_LOOP"
       max_velocity: [0.5, 0.0, 2.0]
       min_velocity: [-0.5, 0.0, -2.0]
-      max_accel: [2.5, 0.0, 3.2]
-      max_decel: [-2.5, 0.0, -3.2]
+      max_accel: [2.5, 0.0, 1.5]
+      max_decel: [-2.5, 0.0, -1.5]
       odom_topic: "odom_filtered"
       odom_duration: 0.1
       deadband_velocity: [0.0, 0.0, 0.0]
