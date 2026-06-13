@@ -21,7 +21,7 @@ class BatteryMonitorNode(Node):
         
         # Declare Parameters
         self.declare_parameter("robot_name", "robot1")
-        self.declare_parameter("drain_rate", 0.003)  # Amount of charge lost per tick
+        self.declare_parameter("drain_rate", 0.002)  # Changed to 0.002 as per optimization plan
         self.declare_parameter("fail_at", 0.0)      # Charge percentage that triggers failure
         self.declare_parameter("start_at", 100.0)   # Initial battery percentage
         
@@ -39,8 +39,20 @@ class BatteryMonitorNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE
         )
-        # Force explicit absolute status topic pathing matching the core agent node
+        
+        # Local battery state publisher targeting only the waypoint_sender
+        self.battery_pub = self.create_publisher(String, f"/{self.robot_name}/battery_level", qos_status)
+        
+        # Subscribe to master status topic to listen for core agent failures
         absolute_status_topic = f"/{self.robot_name}/status"
+        self.create_subscription(
+            String,
+            absolute_status_topic,
+            self._status_override_callback,
+            qos_status
+        )
+        
+        # Tracking variables for physical distance-based drain
         self.status_pub = self.create_publisher(String, absolute_status_topic, qos_status)
         
         # Tracking variables for physical distance-based drain
@@ -100,28 +112,49 @@ class BatteryMonitorNode(Node):
             self._publish_consolidated_status()
             
     def _publish_consolidated_status(self):
-        """Publishes 10Hz periodic JSON heartbeat with dynamic battery telemetries."""
+        """Publishes 10Hz periodic JSON telemetry to the local core agent."""
         payload = {
-            "status": "ACTIVE",
-            "battery": round(self.current_charge, 2)
+            "battery": round(self.current_charge, 2),
+            "is_failed": False
         }
         msg = String()
         msg.data = json.dumps(payload)
-        self.status_pub.publish(msg)
+        self.battery_pub.publish(msg)
             
     def _trigger_failure(self):
-        """Publishes FAILED status JSON to inform fleet coordination systems."""
+        """Publishes FAILED state to the local core agent."""
+        self.is_failed = True  # Added to ensure immediate state locking
         self.get_logger().error(
             f"[{self.robot_name}] BATTERY DEPLETED! Triggering simulated hardware failure."
         )
         payload = {
-            "status": "FAILED",
-            "battery": 0.0
+            "battery": 0.0,
+            "is_failed": True
         }
         msg = String()
         msg.data = json.dumps(payload)
-        self.status_pub.publish(msg)
+        self.battery_pub.publish(msg)
 
+    def _status_override_callback(self, msg: String):
+        """Shuts down battery monitor ticks if the core agent fails."""
+        status_string = msg.data
+        try:
+            data = json.loads(msg.data)
+            status_string = data.get("status", msg.data)
+        except json.JSONDecodeError:
+            pass
+            
+        if status_string == "FAILED" and not self.is_failed:
+            self.is_failed = True  # Added to prevent repeat callback entries
+            self.get_logger().warn(
+                f"[{self.robot_name}] Received external FAILURE from core. Disabling battery monitor."
+            )
+            # Propagate failure locally to waypoint_sender first
+            self._trigger_failure()
+            
+            # Cancel local battery drain timers
+            if self.drain_timer:
+                self.drain_timer.cancel()
 
 def main(args=None):
     rclpy.init(args=args)

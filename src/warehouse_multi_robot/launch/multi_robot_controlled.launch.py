@@ -251,7 +251,7 @@ def _mission_nodes(name):
             namespace=name,
             parameters=[{
                 'robot_name': name,
-                'drain_rate': 0.01,
+                'drain_rate': 0.002,
                 'fail_at':    0.0,
                 'start_at':   100.0,
             }],

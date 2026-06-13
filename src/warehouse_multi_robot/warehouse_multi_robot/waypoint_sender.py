@@ -235,8 +235,12 @@ class TaskCoordinator:
                 self.node.claim_mgr.release_local_claim()
 
     def trigger_reallocation(self, failed_robot_name: str):
-        """Performs battery and distance proportional task re-distribution for a failed peer robot."""
-        # Clean up stale locks held by the failed peer
+        """
+        [Global Task Pool Split]
+        Performs battery-proportional re-distribution of the entire remaining 
+        uncompleted task pool in the warehouse among active survivors.
+        """
+        # 1. Clean up stale locks held by the failed peer
         expired_claims = []
         for side_key, claim in list(self.node.claim_mgr.active_claims.items()):
             if claim.get("robot_id") == failed_robot_name:
@@ -244,30 +248,25 @@ class TaskCoordinator:
         for side_key in expired_claims:
             self.node.claim_mgr.active_claims.pop(side_key, None)
 
-        failed_robot_spec = ROBOTS_SPECIFICATION.get(failed_robot_name)
-        if not failed_robot_spec:
-            return
-            
-        last_wp_id = self.node.health_monitor.robots_last_known_wp.get(failed_robot_name)
-        last_wp_coordinates = None
-        if last_wp_id:
-            last_wp_coordinates = self._get_waypoint_coordinates_by_id(last_wp_id)
-
-        uncompleted_waypoints_to_reallocate = []
-        failed_robot_regions = failed_robot_spec["owned_regions"]
+        # 2. Identify active survivors
+        all_robots = list(ROBOTS_SPECIFICATION.keys())
+        survivors = [
+            r for r in all_robots 
+            if r != failed_robot_name and r not in self.node.health_monitor.failed_robots
+        ]
         
+        if not survivors:
+            self.node.get_logger().error(f"[{self.node.robot_name}] No active survivors left to take over tasks!")
+            return
+
+        # 3. Gather ALL uncompleted unique waypoints in the entire warehouse
+        uncompleted_waypoints_to_reallocate = []
         for item_name, item in self.items_registry.items():
-            if item["region"] not in failed_robot_regions:
-                continue
-                
             for side_name, side_spec in item["sides"].items():
-                static_owner = ITEM_SIDE_OWNERS.get(side_spec["key"])
-                if static_owner and static_owner != failed_robot_name and static_owner not in self.node.health_monitor.failed_robots:
-                    continue
-                
                 labels = side_spec.get("section_labels_template") or side_spec.get("section_labels", ["A"])
                 for label in labels:
                     section_key = f"{side_spec['key']}_{label}"
+                    # Skip if already completed globally
                     if section_key not in self.global_completed_waypoints:
                         coord = self._get_section_coordinates(side_spec, label)
                         if coord:
@@ -281,37 +280,28 @@ class TaskCoordinator:
                             })
 
         if not uncompleted_waypoints_to_reallocate:
+            self.node.get_logger().info(f"[{self.node.robot_name}] Global uncompleted task pool is already empty.")
             return
 
-        # 1. Determine active survivors
-        all_robots = list(ROBOTS_SPECIFICATION.keys())
-        survivors = [
-            r for r in all_robots 
-            if r != failed_robot_name and r not in self.node.health_monitor.failed_robots
-        ]
-        
-        if not survivors:
-            self.node.get_logger().error(f"[{self.node.robot_name}] No active survivors left to take over tasks!")
-            return
-
-        # 2. Gather batteries and calculate proportional split ratios
-        # Default to 100.0 if not received yet. Handles asynchrony gracefully
+        # 4. Gather batteries and calculate proportional split ratios
         batteries = {s: self.node.peer_batteries.get(s, 100.0) for s in survivors}
+        # Force current node to use its own updated local battery
+        if self.node.robot_name in survivors:
+            batteries[self.node.robot_name] = self.node.local_battery
+            
         total_battery = sum(batteries.values())
-        
         if total_battery <= 0.0:
-            # Safe Fallback: Equal split in case of invalid values
             ratios = {s: 1.0 / len(survivors) for s in survivors}
         else:
             ratios = {s: batteries[s] / total_battery for s in survivors}
 
-        # 3. Deterministically sort tasks by proximity to failed robot's last known waypoint
-        ref_coords = last_wp_coordinates or (0.0, 0.0)
+        # 5. Deterministically sort the global pool to ensure decentralized consistency
+        # Both survivors must calculate exactly the same split sequence in parallel
         uncompleted_waypoints_to_reallocate.sort(
-            key=lambda wp: math.hypot(wp["x"] - ref_coords[0], wp["y"] - ref_coords[1])
+            key=lambda wp: (wp["item_name"], wp["side_key"], wp["section_label"])
         )
 
-        # 4. Perform proportional split calculation (Deterministic Split)
+        # 6. Perform proportional split calculation (Deterministic Split)
         N = len(uncompleted_waypoints_to_reallocate)
         allocated_counts = {}
         remaining_tasks = N
@@ -323,7 +313,7 @@ class TaskCoordinator:
                 allocated_counts[s] = count
                 remaining_tasks -= count
 
-        # 5. Populate pre-allocated lists inside payload
+        # 7. Populate pre-allocated lists inside payload
         allocations = {s: [] for s in survivors}
         task_idx = 0
         for s in survivors:
@@ -332,8 +322,8 @@ class TaskCoordinator:
             task_idx += count
 
         self.node.get_logger().warn(
-            f"[{self.node.robot_name}] DETERMINISTIC SPLIT. Survivors: {survivors}, "
-            f"Batteries: {batteries}, Split: {allocated_counts}"
+            f"[{self.node.robot_name}] GLOBAL TASK POOL SPLIT. Survivors: {survivors}, "
+            f"Batteries: {batteries}, Remaining Tasks: {N}, Split: {allocated_counts}"
         )
 
         # Reallocation Payload
@@ -416,6 +406,14 @@ class WaypointSenderNode(Node):
 
         self.side_lock_active = False
         
+        # Local battery and peer coordinate cache registers
+        self.local_battery = 100.0
+        self.peer_poses: Dict[str, Tuple[float, float]] = {}
+        
+        # ROI Goal-shifting trackers
+        self.current_goal_is_shifted = False
+        self.shifted_focus_point: Optional[Tuple[float, float]] = None
+        
         self.active_target_dict: Optional[Dict[str, Any]] = {
             "item_name": self.spec["first_item"],
             "side_key": f"{self.spec['first_item']}_{self.spec['first_side']}"
@@ -453,9 +451,11 @@ class WaypointSenderNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE
         )
-        # Redirected to a dedicated nav_status topic to prevent battery monitor collision
-        absolute_status_topic = f"/{self.robot_name}/nav_status"
-        self.status_pub = self.create_publisher(String, absolute_status_topic, qos_status)
+        
+        # Master consolidated status publisher (for peers and battery monitor)
+        self.status_pub = self.create_publisher(String, f"/{self.robot_name}/status", qos_status)
+        # Nav status publisher (strictly for diagnosis and telemetry UI)
+        self.nav_status_pub = self.create_publisher(String, f"/{self.robot_name}/nav_status", qos_status)
         
         qos_claims = QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE)
         qos_transient = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
@@ -468,18 +468,13 @@ class WaypointSenderNode(Node):
         # Changed to absolute/global topic subscription to resolve namespaced isolation
         self.create_subscription(String, "/add_waypoints", self._add_waypoints_callback, 10)
         
-        # Using explicit absolute status topic matching the battery monitor publisher exactly
-        self.create_subscription(String, absolute_status_topic, self._local_status_callback, qos_transient)
-
-        # Dynamically subscribe to all peer status topics to monitor battery and status consolidated JSONs
-        for peer_name in ROBOTS_SPECIFICATION.keys():
-            peer_status_topic = f"/{peer_name}/status"
-            self.create_subscription(
-                String,
-                peer_status_topic,
-                lambda msg, p_name=peer_name: self._peer_status_callback(msg, p_name),
-                qos_transient
-            )
+        # Subscribe to local battery monitor telemetry
+        self.create_subscription(
+            String, 
+            f"/{self.robot_name}/battery_level", 
+            self._local_battery_callback, 
+            qos_transient
+        )
 
         # Dynamically subscribe to all peer status topics to monitor battery and status consolidated JSONs
         for peer_name in ROBOTS_SPECIFICATION.keys():
@@ -507,6 +502,10 @@ class WaypointSenderNode(Node):
         # New: Decoupled Fleet Health watchdog timer running at 1Hz
         self.heartbeat_monitor_timer = self.create_timer(1.0, self.health_monitor.check_fleet_health)
         
+        # New: 1Hz Master Heartbeat timer to periodically broadcast status
+        self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat_tick)
+        
+        
         self.scan_delay_timer = None
         self._target_align_yaw: float = 0.0
 
@@ -515,25 +514,42 @@ class WaypointSenderNode(Node):
         self.get_logger().info(f"[{self.robot_name}] WaypointSender Ready. First target: {self.spec['first_item']}")
 
     def _peer_status_callback(self, msg: String, peer_name: str):
-        """Asynchronously parses consolidated peer status updates to extract heartbeats and battery."""
+        """Asynchronously parses peer status updates to extract heartbeats, battery, and failure."""
         try:
             data = json.loads(msg.data)
             status = data.get("status")
             battery = float(data.get("battery", 100.0))
             
-            # Cache peer battery level
             self.peer_batteries[peer_name] = battery
             
-            # Register active heartbeat
+            # Cache peer coordinates if available in heartbeat
+            px = data.get("x")
+            py = data.get("y")
+            if px is not None and py is not None:
+                self.peer_poses[peer_name] = (float(px), float(py))
+            
             if status == "ACTIVE" and peer_name != self.robot_name:
-                now_ns = int(self.get_clock().now().nanoseconds)
-                self.health_monitor.register_heartbeat(peer_name, now_ns)
+                self.health_monitor.register_heartbeat(peer_name, int(self.get_clock().now().nanoseconds))
+            
+            # Instant failure trigger: If status is FAILED, trigger reallocation immediately
+            elif status == "FAILED" and peer_name != self.robot_name:
+                if peer_name not in self.health_monitor.failed_robots:
+                    self.get_logger().error(
+                        f"[{self.robot_name}] Peer {peer_name} reported FAILURE. Triggering instant reallocation!"
+                    )
+                    self.health_monitor.failed_robots.add(peer_name)
+                    self.task_coord.trigger_reallocation(peer_name)
                 
         except json.JSONDecodeError:
             # Fallback for old/legacy raw status strings
             if msg.data == "FAILED" and peer_name != self.robot_name:
                 self.peer_batteries[peer_name] = 0.0
-                self.get_logger().error(f"[{self.robot_name}] Legacy string indicating failure for {peer_name}")
+                if peer_name not in self.health_monitor.failed_robots:
+                    self.get_logger().error(
+                        f"[{self.robot_name}] Legacy string indicating failure for {peer_name}. Triggering instant reallocation!"
+                    )
+                    self.health_monitor.failed_robots.add(peer_name)
+                    self.task_coord.trigger_reallocation(peer_name)
 
 
     def _amcl_callback(self, msg: PoseWithCovarianceStamped):
@@ -563,7 +579,7 @@ class WaypointSenderNode(Node):
         
         # Preventative active watchdog: trigger spin if localization drifts during active driving
         if not self.is_localization_fresh and self.current_state in (
-            RobotState.NAVIGATING_TO_TARGET, RobotState.ALIGNING_YAW, RobotState.EVALUATING_PATH
+            RobotState.NAVIGATING_TO_TARGET, RobotState.ALIGNING_YAW
         ):
             self._trigger_amcl_recovery_spin()
 
@@ -627,7 +643,7 @@ class WaypointSenderNode(Node):
             
         self.get_logger().error(
             f"[{self.robot_name}] Peer {failed_robot} is OFFLINE. "
-            f"Registering reallocated tasks to deferred queue..."
+            f"Re-evaluating global task pool allocation..."
         )
         
         # Extract pre-allocated tasks computed by the peer
@@ -635,11 +651,11 @@ class WaypointSenderNode(Node):
         my_reallocated_wps = allocations.get(self.robot_name, [])
         
         if not my_reallocated_wps:
-            self.get_logger().info(f"[{self.robot_name}] Pre-allocation list is empty for me.")
+            self.get_logger().info(f"[{self.robot_name}] Global reallocation allocated 0 new tasks to me.")
             return
 
         self.get_logger().warn(
-            f"[{self.robot_name}] Assumed {len(my_reallocated_wps)} tasks from {failed_robot}. "
+            f"[{self.robot_name}] Assumed {len(my_reallocated_wps)} remaining tasks globally. "
             f"Will begin execution once original heuristic tasks are complete."
         )
         
@@ -658,8 +674,14 @@ class WaypointSenderNode(Node):
             # Cache the specific reallocated side key to allow access during deferred mode
             self.reallocated_assigned_side_keys.add(wp["side_key"])
             
-        # Dynamically expand waypoint limit to accept the new reallocated workload
-        self.spec["waypoint_limit"] += len(my_reallocated_wps)
+        # Dynamically set the new waypoint limit mathematically to completed + newly allocated remaining tasks
+        # This completely eliminates any double-counting or regional overlap quota inflation!
+        self.spec["waypoint_limit"] = self.completed_waypoints_count + len(my_reallocated_wps)
+        
+        self.get_logger().info(
+            f"[{self.robot_name}] Waypoint limit mathematically updated: {self.completed_waypoints_count} completed "
+            f"+ {len(my_reallocated_wps)} newly allocated = New Limit: {self.spec['waypoint_limit']}"
+        )
 
     def _local_status_callback(self, msg: String):
         """Checks local battery telemetry payload to trigger failure cleanup."""
@@ -913,21 +935,145 @@ class WaypointSenderNode(Node):
 
     def _dispatch_navigation(self):
         self.current_state = RobotState.NAVIGATING_TO_TARGET
-        target_x, target_y = self.chosen_candidate
         
-        # Determine the coordinates of the final target shelf
-        final_x = self.active_target_dict["x"]
-        final_y = self.active_target_dict["y"]
+        # Reset shifted goal flags
+        self.current_goal_is_shifted = False
+        self.shifted_focus_point = None
         
-        # If navigating to a temporary candidate, set its target yaw to match 
-        # the heading of the next segment (candidate to final target).
-        # This completely eliminates double-rotation jerkiness at the transition point!
-        if (target_x, target_y) != (final_x, final_y):
-            travel_yaw = math.atan2(final_y - target_y, final_x - target_x)
-        else:
-            # For final target approach, use standard travel direction yaw
-            travel_yaw = math.atan2(target_y - self.current_y, target_x - self.current_x)
+        target_x = self.active_target_dict["x"]
+        target_y = self.active_target_dict["y"]
+        side_key = self.active_target_dict["side_key"]
+        
+        # Determine perpendicular orientation angle based on side
+        theta_perp = 0.0
+        if "yplus" in side_key:
+            theta_perp = -math.pi / 2.0
+        elif "yminus" in side_key:
+            theta_perp = math.pi / 2.0
+        elif "xminus" in side_key:
+            theta_perp = 0.0
+        elif "xplus" in side_key:
+            theta_perp = math.pi
+
+        # Check if any dead robot is blocking our target standing point
+        blocked_by_peer = False
+        block_x, block_y = 0.0, 0.0
+        failed_peer_name = "None"
+        
+        # D_safe: Parametric safe circular distance (Robot radius + sweeping margin + costmap inflation)
+        D_safe = 0.85  
+        
+        for failed_peer in self.health_monitor.failed_robots:
+            peer_pose = self.peer_poses.get(failed_peer)
+            if peer_pose:
+                dist = math.hypot(target_x - peer_pose[0], target_y - peer_pose[1])
+                # If a dead robot is closer than D_safe to our target, it is blocked
+                if dist < D_safe:
+                    blocked_by_peer = True
+                    block_x, block_y = peer_pose
+                    failed_peer_name = failed_peer
+                    break
+                    
+        if blocked_by_peer:
+            self.get_logger().warn(
+                f"[{self.robot_name}] Target {side_key} is blocked by failed {failed_peer_name} "
+                f"at ({block_x:.2f}, {block_y:.2f}). Applying Mathematical Dynamic Goal Shifting..."
+            )
             
+            # Fetch item specs for geometric boundaries
+            item_name = self.active_target_dict["item_name"]
+            item = self.task_coord.items_registry.get(item_name, {})
+            item_type = item.get("type", "shelf")
+            item_x = item.get("x", 0.0)
+            item_y = item.get("y", 0.0)
+            
+            # Calculate shift based on shelf orientation (parallel axis)
+            if "yplus" in side_key or "yminus" in side_key:
+                # Horizontal shelf -> Shift along X axis
+                dy = abs(target_y - block_y)
+                if dy < D_safe:
+                    # Solve Pythagorean theorem to clear circle of radius D_safe
+                    delta_x = math.sqrt(D_safe**2 - dy**2)
+                    x_left = block_x - delta_x
+                    x_right = block_x + delta_x
+                    
+                    sec_x = self.active_target_dict["x"]
+                    
+                    # If target falls inside the blocked interval, shift it
+                    if x_left < target_x < x_right:
+                        # Choose the boundary closer to the section center
+                        if abs(x_left - sec_x) < abs(x_right - sec_x):
+                            target_x = x_left
+                        else:
+                            target_x = x_right
+                        
+                        # Apply physical shelf geometric boundary safety valves
+                        if item_type == "shelf":
+                            min_val = item_x - 1.8
+                            max_val = item_x + 1.8
+                            if not (min_val <= target_x <= max_val):
+                                self.get_logger().error(
+                                    f"[{self.robot_name}] Shifted target_x ({target_x:.2f}) exceeds physical shelf boundaries! Deferring task."
+                                )
+                                self._defer_active_task()
+                                return
+            else:
+                # Vertical shelf/pallet -> Shift along Y axis
+                dx = abs(target_x - block_x)
+                if dx < D_safe:
+                    delta_y = math.sqrt(D_safe**2 - dx**2)
+                    y_bottom = block_y - delta_y
+                    y_top = block_y + delta_y
+                    
+                    sec_y = self.active_target_dict["y"]
+                    
+                    if y_bottom < target_y < y_top:
+                        if abs(y_bottom - sec_y) < abs(y_top - sec_y):
+                            target_y = y_bottom
+                        else:
+                            target_y = y_top
+                        
+                        # Apply physical big shelf geometric boundary safety valves
+                        if item_type == "shelf_big":
+                            min_val = item_y - 9.0
+                            max_val = item_y + 9.0
+                            if not (min_val <= target_y <= max_val):
+                                self.get_logger().error(
+                                    f"[{self.robot_name}] Shifted target_y ({target_y:.2f}) exceeds physical big shelf boundaries! Deferring task."
+                                )
+                                self._defer_active_task()
+                                return
+
+            # Perspective safety valve check
+            if target_x != self.active_target_dict["x"] or target_y != self.active_target_dict["y"]:
+                # Calculate shifted approach yaw towards actual section center
+                align_yaw = math.atan2(
+                    self.active_target_dict["y"] - target_y,
+                    self.active_target_dict["x"] - target_x
+                )
+                angle_diff = abs(math.atan2(math.sin(align_yaw - theta_perp), math.cos(align_yaw - theta_perp)))
+                
+                # Max allowed angular deviation: 35.0 degrees to prevent perspective distortion
+                max_dev_rad = 35.0 * math.pi / 180.0
+                if angle_diff > max_dev_rad:
+                    self.get_logger().error(
+                        f"[{self.robot_name}] Perspective deviation ({math.degrees(angle_diff):.1f} deg) "
+                        f"exceeds safety threshold ({math.degrees(max_dev_rad):.1f} deg)! Deferring task immediately."
+                    )
+                    self._defer_active_task()
+                    return
+                
+                self.current_goal_is_shifted = True
+                self.shifted_focus_point = (self.active_target_dict["x"], self.active_target_dict["y"])
+                self.get_logger().info(
+                    f"[{self.robot_name}] Goal dynamically shifted to: ({target_x:.2f}, {target_y:.2f}) "
+                    f"focusing on original ROI center: ({self.active_target_dict['x']:.2f}, {self.active_target_dict['y']:.2f})"
+                )
+            
+        self.chosen_candidate = (target_x, target_y)
+        
+        # Calculate travel heading yaw for navigation phase
+        travel_yaw = math.atan2(target_y - self.current_y, target_x - self.current_x)
         qx, qy, qz, qw = self._yaw_to_quaternion(travel_yaw)
 
         goal_msg = NavigateToPose.Goal()
@@ -989,16 +1135,8 @@ class WaypointSenderNode(Node):
         status = future.result().status
         
         if status == 4:  # SUCCEEDED
-            target_x = self.active_target_dict["x"]
-            target_y = self.active_target_dict["y"]
-            
-            if self.chosen_candidate == (target_x, target_y):
-                self.recovery_mgr.stop_monitoring()
-                self._dispatch_alignment_rotation()
-            else:
-                self.chosen_candidate = (target_x, target_y)
-                self.recovery_mgr.start_monitoring(self.current_x, self.current_y, is_candidate=False)
-                self._dispatch_navigation()
+            self.recovery_mgr.stop_monitoring()
+            self._dispatch_alignment_rotation()
         elif status == 5:  # CANCELED
             # Bypass throttling on intentional recovery manager cancellations
             self.get_logger().info(f"[{self.robot_name}] Navigation intentionally canceled. Proceeding directly.")
@@ -1006,7 +1144,15 @@ class WaypointSenderNode(Node):
                 self.recovery_mgr.state = RecoveryState.IDLE
                 self.current_state = RobotState.DECISION_PHASE
         else:
-            self.get_logger().error(f"[{self.robot_name}] Navigation Action Ended with failure status: {status}. Throttling retry.")
+            self.get_logger().error(f"[{self.robot_name}] Navigation Action Ended with failure status: {status}.")
+            
+            # If the shifted goal failed, it means the corridor is fully blocked. Skip and defer immediately!
+            if self.current_goal_is_shifted:
+                self.get_logger().error(
+                    f"[{self.robot_name}] Shifted bypass goal failed. Passage is completely blocked. Deferring task immediately!"
+                )
+                self._defer_active_task()
+                return
             
             if self._retry_timer is not None:
                 self._retry_timer.cancel()
@@ -1021,21 +1167,30 @@ class WaypointSenderNode(Node):
                 )
 
     def _dispatch_alignment_rotation(self):
-        """Aligns robot perpendicularly to the shelf via cmd_vel P-controller."""
+        """Aligns robot focused on ROI section center if shifted, or perpendicularly via cmd_vel P-controller."""
         self.current_state = RobotState.ALIGNING_YAW
-
         side_key = self.active_target_dict["side_key"]
 
-        if "yplus" in side_key:
-            self._target_align_yaw = -math.pi / 2.0
-        elif "yminus" in side_key:
-            self._target_align_yaw = math.pi / 2.0
-        elif "xminus" in side_key:
-            self._target_align_yaw = 0.0
-        elif "xplus" in side_key:
-            self._target_align_yaw = math.pi
+        # If the approach goal was shifted parallel to the shelf face, calculate dynamic ROI focal angle
+        if self.current_goal_is_shifted and self.shifted_focus_point:
+            focus_x, focus_y = self.shifted_focus_point
+            self._target_align_yaw = math.atan2(focus_y - self.current_y, focus_x - self.current_x)
+            self.get_logger().warn(
+                f"[{self.robot_name}] Goal was shifted. Aligning to target ROI section center at "
+                f"({focus_x:.2f}, {focus_y:.2f}) -> Dynamic Focus Yaw: {self._target_align_yaw:.3f} rad"
+            )
         else:
-            self._target_align_yaw = self.current_yaw
+            # Standard perpendicular yaw logic
+            if "yplus" in side_key:
+                self._target_align_yaw = -math.pi / 2.0
+            elif "yminus" in side_key:
+                self._target_align_yaw = math.pi / 2.0
+            elif "xminus" in side_key:
+                self._target_align_yaw = 0.0
+            elif "xplus" in side_key:
+                self._target_align_yaw = math.pi
+            else:
+                self._target_align_yaw = self.current_yaw
 
         self.get_logger().info(
             f"[{self.robot_name}] Aligning yaw to {self._target_align_yaw:.3f} rad via cmd_vel P-controller"
@@ -1145,14 +1300,43 @@ class WaypointSenderNode(Node):
         self.claim_mgr.publish_renewals()
 
     def _publish_local_status(self, status_string: str):
-        """Publishes JSON consolidated status representation to avoid type conflicts."""
+        """Publishes JSON consolidated status representation with pose coordinates to prevent type conflicts."""
         payload = {
             "status": status_string,
-            "battery": 100.0  # Initial default value for bootstrap status
+            "battery": round(self.local_battery, 2),
+            "x": round(self.current_x, 2),
+            "y": round(self.current_y, 2)
         }
         msg = String()
         msg.data = json.dumps(payload)
+        
+        # Publish to both topics to satisfy peers, battery monitor, and diagnosis
         self.status_pub.publish(msg)
+        self.nav_status_pub.publish(msg)
+
+    def _publish_heartbeat_tick(self):
+        """Periodically broadcasts the consolidated master heartbeat to the fleet."""
+        if self.current_state == RobotState.FAILED:
+            self._publish_local_status("FAILED")
+        elif self.current_state == RobotState.IDLE:
+            self._publish_local_status("IDLE")
+        else:
+            self._publish_local_status("ACTIVE")
+
+    def _local_battery_callback(self, msg: String):
+        """Asynchronously updates local battery cache and handles failure triggers from the hardware monitor."""
+        try:
+            data = json.loads(msg.data)
+            self.local_battery = float(data.get("battery", 100.0))
+            is_failed = bool(data.get("is_failed", False))
+            
+            if is_failed and self.current_state != RobotState.FAILED:
+                self.get_logger().error(f"[{self.robot_name}] Battery monitor reported critical hardware FAILURE!")
+                self.current_state = RobotState.FAILED
+                self._execute_failure_cleanup()
+                
+        except (json.JSONDecodeError, ValueError):
+            pass
 
     def _publish_completed_summary(self):
         completed_keys = []
