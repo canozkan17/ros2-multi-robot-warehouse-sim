@@ -13,39 +13,41 @@ log/
 # Datasets
 cardbox_dataset/ 
 
-# Files
-thesis_progress_plan_execution.txt
+# Thesis & Project Docs
 draft.txt
 writing/Thesis/System_Architecture_draft.txt
+thesis_progress_plan_execution.txt
+system_general_behavior.md
+graph.md
+waypoint_sender_situation.md
+thesis_progress_plan_execution.md
+
+# Logs & Reports
 diagnostic_log.txt
 nav2_logs.txt
 system_health_report.txt
 waypoint_verification.txt
 waypoint_false_positives.txt
 waypoint_clearance_report.txt
+full_log.txt
+/home/canozkan/thesis_ws/diagnosis_terminal_logs.txt
 
-
-#Scripts
+# Scripts
 char_count.py
 system_health_check.py
 waypoint_clearance_report.py
 robot_tracker.py
 
-
-src/mini_scripts/__pycache__/waypoint_clearance_report.cpython-312.pyc
-src/mini_scripts/__pycache__/robot_tracker.cpython-312.pyc
-src/mini_scripts/robot3_debug_log.txt
-src/mini_scripts/robot2_debug_log.txt
+# Mini Scripts & Debug
+src/mini_scripts/__pycache__/
 src/mini_scripts/robot1_debug_log.txt
+src/mini_scripts/robot2_debug_log.txt
+src/mini_scripts/robot3_debug_log.txt
 src/mini_scripts/analyze_bag.py
 src/mini_scripts/bag_to_csv.py
 src/mini_scripts/odom_cov_adjuster.py
-
 src/mini_scripts/amcl_diagnose.py
-system_general_behavior.md
+
+# Config/Misc
 .gitignore
-graph.md
-waypoint_sender_situation.md
-full_log.txt
-/home/canozkan/thesis_ws/diagnosis_terminal_logs.txt
 
