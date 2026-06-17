@@ -11,11 +11,14 @@ install/
 log/
 
 # Datasets
-cardbox_dataset/ 
+src/cardbox_dataset/cardbox_anomaly_analysis_files/
+src/cardbox_dataset/cardbox_anomaly_analysis.md
+
+
 
 # Thesis & Project Docs
 draft.txt
-writing/Thesis/System_Architecture_draft.txt
+writing/Thesis/5.5+5.6.txt
 thesis_progress_plan_execution.txt
 system_general_behavior.md
 graph.md

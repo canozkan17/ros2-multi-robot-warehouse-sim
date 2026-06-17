@@ -11,6 +11,11 @@ with zero network latency.
 import math
 import json
 import time
+import os
+import pickle
+import hashlib
+import threading
+import csv
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any, List, Set
 
@@ -18,6 +23,14 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+
+# --- SPRINT 3 ML CORDIAL LIBRARIES ---
+import cv2
+import numpy as np
+from skimage.feature import local_binary_pattern, hog
+
+# --- ROS 2 IMAGE TRANSPORT ---
+from sensor_msgs.msg import Image
 
 from geometry_msgs.msg import PoseStamped, Twist, PoseWithCovarianceStamped
 from std_msgs.msg import String, Bool
@@ -505,11 +518,27 @@ class WaypointSenderNode(Node):
         # New: 1Hz Master Heartbeat timer to periodically broadcast status
         self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat_tick)
         
-        
         self.scan_delay_timer = None
         self._target_align_yaw: float = 0.0
 
         self.amcl_recovery_attempts = 0
+
+        # --- SPRINT 3 ML PIPELINE PARAMETERS & PUBLISHERS ---
+        self.declare_parameter("model_path", "")
+        self.declare_parameter("dataset_path", "")
+        
+        self.anomaly_pub = self.create_publisher(String, "/anomaly_alert", 10)
+        self._inference_in_progress = False
+        self._inference_finished = False
+        self._async_scan_thread = None
+
+        # Asynchronously streams processed/XAI-overlaid views to PyQt5 UI
+        self.image_pub = self.create_publisher(Image, "camera_view", 10)
+        
+        # Pre-load frozen ML assets and map available image paths safely
+        self._load_ml_assets()
+        self._pool_dataset_paths()
+        # -----------------------------------------------------
 
         self.get_logger().info(f"[{self.robot_name}] WaypointSender Ready. First target: {self.spec['first_item']}")
 
@@ -766,6 +795,8 @@ class WaypointSenderNode(Node):
             self._execute_decision_phase()
         elif self.current_state == RobotState.AMCL_RECOVERY_SPIN:
             self._handle_amcl_recovery_tick()
+        elif self.current_state == RobotState.SCANNING:
+            self._handle_scanning_tick()
 
     def _handle_bootstrap_amcl(self):
         if self.is_localization_fresh:
@@ -1215,26 +1246,31 @@ class WaypointSenderNode(Node):
         self.cmd_vel_pub.publish(cmd)
 
     def _start_scanning_process(self):
+        """Initiates the non-blocking asynchronous multi-level scanning process."""
         self.current_state = RobotState.SCANNING
         self.side_lock_active = True  # Target reached and aligned; lock on this side for subsequent sweeps
         self._stop_robot()
         
-        if self.scan_delay_timer is not None:
-            self.scan_delay_timer.cancel()
-        self.scan_delay_timer = self.create_timer(SCAN_DURATION_SEC, self._on_scan_completed)
+        self._inference_in_progress = True
+        self._inference_finished = False
+        
+        # Spawn asynchronous thread to handle image injection, perturbations, and ML predictions
+        self._async_scan_thread = threading.Thread(target=self._run_async_scanning_pipeline)
+        self._async_scan_thread.daemon = True
+        self._async_scan_thread.start()
+
+    def _handle_scanning_tick(self):
+        """Monitors the state of the asynchronous ML scanning background thread on the main ROS thread."""
+        if self._inference_finished:
+            # Complete the scan on the main thread safely
+            self._inference_in_progress = False
+            self._inference_finished = False
+            if self._async_scan_thread:
+                self._async_scan_thread.join()
+                self._async_scan_thread = None
+            self._on_scan_completed()
 
     def _on_scan_completed(self):
-        # Gatekeeper: Prevent execution and state changes if the robot has already failed
-        if self.current_state == RobotState.FAILED:
-            if self.scan_delay_timer is not None:
-                self.scan_delay_timer.cancel()
-                self.scan_delay_timer = None
-            return
-
-        if self.scan_delay_timer is not None:
-            self.scan_delay_timer.cancel()
-            self.scan_delay_timer = None
-            
         # Reset recovery attempts counter on successful task completion
         self.amcl_recovery_attempts = 0
             
@@ -1533,6 +1569,388 @@ class WaypointSenderNode(Node):
         exit_past_b = t > (v_length + half_step + safety_margin)
         
         return exit_past_a or exit_past_b
+    
+    # ==============================================================================
+    # SPRINT 3: DETAILED ML PIPELINE & SENSOR EMULATION CORE
+    # ==============================================================================
+
+    def _load_ml_assets(self):
+        """Loads StandardScaler, PCA, SVM, and XGBoost models with fail-safe fallback logic."""
+        self.svm_active = False
+        self.xgb_active = False
+        self.scaler = None
+        self.pca = None
+        self.svm_model = None
+        self.xgb_model = None
+
+        model_dir = self.get_parameter("model_path").value
+        if not model_dir:
+            model_dir = os.path.expanduser("~/thesis_ws/src/cardbox_dataset")
+
+        self.get_logger().info(f"[{self.robot_name}] Loading ML pipeline assets from: {model_dir}")
+
+        try:
+            # Load Scaler
+            scaler_path = os.path.join(model_dir, "cardbox_scaler.pkl")
+            with open(scaler_path, "rb") as f:
+                self.scaler = pickle.load(f)
+
+            # Load PCA
+            pca_path = os.path.join(model_dir, "cardbox_pca.pkl")
+            with open(pca_path, "rb") as f:
+                self.pca = pickle.load(f)
+
+            # Load SVM (Primary)
+            svm_path = os.path.join(model_dir, "cardbox_svm_model.pkl")
+            with open(svm_path, "rb") as f:
+                self.svm_model = pickle.load(f)
+            self.svm_active = True
+            self.get_logger().info(f"[{self.robot_name}] StandardScaler, PCA, and SVM loaded successfully.")
+        except Exception as e:
+            self.get_logger().error(f"[{self.robot_name}] Failed to load primary SVM pipeline assets: {e}")
+
+        try:
+            # Load XGBoost (Fallback)
+            from xgboost import XGBClassifier
+            xgb_path = os.path.join(model_dir, "cardbox_xgb_model.json")
+            self.xgb_model = XGBClassifier()
+            self.xgb_model.load_model(xgb_path)
+            self.xgb_active = True
+            self.get_logger().info(f"[{self.robot_name}] Fallback XGBoost model loaded successfully.")
+        except Exception as e:
+            self.get_logger().error(f"[{self.robot_name}] Failed to load fallback XGBoost model: {e}")
+
+        if not self.svm_active and not self.xgb_active:
+            self.get_logger().error(f"[{self.robot_name}] CRITICAL: Both SVM and XGBoost models failed to load! Proceeding with mocked classification.")
+
+    def _pool_dataset_paths(self):
+        """Traverses the test and valid directories to register high-fidelity image paths into separate lists."""
+        self.intact_paths = []
+        self.damaged_paths = []
+
+        dataset_dir = self.get_parameter("dataset_path").value
+        if not dataset_dir:
+            dataset_dir = os.path.expanduser("~/thesis_ws/src/cardbox_dataset")
+
+        active_defect_classes = {1, 2, 3, 6}
+        excluded_class = 4
+        supported_extensions = (".jpg", ".jpeg", ".png", ".bmp")
+
+        for split in ["test", "valid"]:
+            images_dir = os.path.join(dataset_dir, split, "images")
+            labels_dir = os.path.join(dataset_dir, split, "labels")
+
+            if not os.path.exists(images_dir):
+                continue
+
+            for img_name in os.listdir(images_dir):
+                if not img_name.lower().endswith(supported_extensions):
+                    continue
+
+                img_path = os.path.join(images_dir, img_name)
+                base_name = os.path.splitext(img_name)[0]
+                label_name = f"{base_name}.txt"
+                label_path = os.path.join(labels_dir, label_name)
+
+                contains_out_of_domain = False
+                is_damaged = False
+
+                if os.path.exists(label_path) and os.path.getsize(label_path) > 0:
+                    with open(label_path, 'r') as f:
+                        for line in f:
+                            parts = line.strip().split()
+                            if parts:
+                                class_id = int(parts[0])
+                                if class_id == excluded_class:
+                                    contains_out_of_domain = True
+                                    break
+                                elif class_id in active_defect_classes:
+                                    is_damaged = True
+
+                if contains_out_of_domain:
+                    continue
+
+                if is_damaged:
+                    self.damaged_paths.append(img_path)
+                else:
+                    self.intact_paths.append(img_path)
+
+        self.get_logger().info(
+            f"[{self.robot_name}] Dataset pooling complete. "
+            f"Intact: {len(self.intact_paths)} paths, Damaged: {len(self.damaged_paths)} paths pooled."
+        )
+
+    def _extract_spatial_lbp(self, image, P=8, R=1, grid_rows=4, grid_cols=4):
+        """Computes Local Binary Patterns (LBP) uniform histogram on a spatial grid."""
+        lbp = local_binary_pattern(image, P, R, method='uniform')
+        h, w = image.shape
+        block_h = h // grid_rows
+        block_w = w // grid_cols
+        spatial_features = []
+        
+        for i in range(grid_rows):
+            for j in range(grid_cols):
+                block = lbp[i*block_h : (i+1)*block_h, j*block_w : (j+1)*block_w]
+                hist, _ = np.histogram(
+                    block.ravel(), 
+                    bins=np.arange(0, P + 3), 
+                    range=(0, P + 2), 
+                    density=True
+                )
+                spatial_features.extend(hist)
+        return np.array(spatial_features)
+
+    def _extract_hog_features(self, image):
+        """Extracts Histogram of Oriented Gradients (HOG) features."""
+        features = hog(
+            image,
+            orientations=9,
+            pixels_per_cell=(16, 16),
+            cells_per_block=(2, 2),
+            block_norm='L2-Hys',
+            visualize=False
+        )
+        return features
+
+    def _apply_physical_perturbations(self, image):
+        """Simulates physical sensor noise, camera jitter, and lighting shifts on-the-fly."""
+        h, w = image.shape
+        
+        # 1. Illumination Shift (Grayscale pixel values scaled by a factor of 0.95 to 1.05)
+        scale_factor = np.random.uniform(0.95, 1.05)
+        perturbed = np.clip(image * scale_factor, 0, 255).astype(np.uint8)
+        
+        # 2. Camera Jitter (Random micro rotation of +/- 2 degrees to simulate robotic stopping offsets)
+        angle = np.random.uniform(-2.0, 2.0)
+        M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+        perturbed = cv2.warpAffine(perturbed, M, (w, h), borderMode=cv2.BORDER_REFLECT)
+        
+        # 3. Additive Gaussian Sensor Noise
+        sigma = np.random.uniform(0.0, 5.0)
+        if sigma > 0.0:
+            noise = np.random.normal(0, sigma, image.shape)
+            perturbed = np.clip(perturbed + noise, 0, 255).astype(np.uint8)
+            
+        return perturbed
+
+    def _run_async_scanning_pipeline(self):
+        """Asynchronously executes the multi-level Z-axis physical sweep and model inferences."""
+        try:
+            item_name = self.active_target_dict["item_name"]
+            is_pallet = "pallet" in item_name.lower() or "mobile_cluster" in item_name.lower()
+            max_levels = 1 if is_pallet else 3
+
+            shelf_id = self.active_target_dict["side_key"]
+
+            # STEP 2 EVALUATION: Physically scale climbing delay based on actual shelf geometry
+            if is_pallet:
+                level_climb_delay = 0.0
+            elif "shelf_big" in item_name.lower():
+                level_climb_delay = 4.0  # Safe indoor vertical climb for 6.0m warehouse shelving
+            else:
+                level_climb_delay = 1.5  # Standard vertical climb for 1.8m retail racks
+
+            self.get_logger().info(
+                f"[{self.robot_name}] Initiating async Z-axis scanning. "
+                f"Item: {item_name}, Total Levels: {max_levels}, Climb Delay: {level_climb_delay}s"
+            )
+
+            latency_csv_path = os.path.expanduser("~/thesis_ws/anomaly_latency.csv")
+
+            for level in range(1, max_levels + 1):
+                # Simulated delay to represent drone physical vertical climbing/positioning
+                if level_climb_delay > 0.0:
+                    time.sleep(level_climb_delay)
+
+                if self.current_state == RobotState.FAILED:
+                    return
+
+                # A. Deterministic MD5 Hashing (Option 3)
+                scan_key = f"{shelf_id}_L{level}"
+                hash_hex = hashlib.md5(scan_key.encode()).hexdigest()
+                hash_int = int(hash_hex, 16)
+                
+                is_damaged = (hash_int % 100) < 30  # 30% anomaly rate
+
+                # B. Pick corresponding image path safely from pool
+                img_path = None
+                if is_damaged and self.damaged_paths:
+                    img_path = self.damaged_paths[hash_int % len(self.damaged_paths)]
+                elif self.intact_paths:
+                    img_path = self.intact_paths[hash_int % len(self.intact_paths)]
+
+                if not img_path or not os.path.exists(img_path):
+                    self.get_logger().warn(f"[{self.robot_name}] Image path not found. Using mock inference.")
+                    continue
+
+                # C. Read & Apply physical perturbations (Sensor Emulation)
+                t_start = time.perf_counter()
+                raw_img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                if raw_img is None:
+                    continue
+                resized_img = cv2.resize(raw_img, (128, 128))
+                perturbed_img = self._apply_physical_perturbations(resized_img)
+
+                # D. Extract Features and Transform (Inference Pipeline)
+                lbp_feat = self._extract_spatial_lbp(perturbed_img)
+                hog_feat = self._extract_hog_features(perturbed_img)
+                fused_feat = np.hstack((lbp_feat, hog_feat)).reshape(1, -1)
+
+                prediction = 0
+                confidence = 1.0
+                model_used = "Mocked"
+
+                if self.scaler and self.pca:
+                    scaled_feat = self.scaler.transform(fused_feat)
+                    pca_feat = self.pca.transform(scaled_feat)
+
+                    # E. Fail-safe Fallback Engine (Analytical Redundancy)
+                    if self.svm_active and self.svm_model:
+                        try:
+                            prediction = int(self.svm_model.predict(pca_feat)[0])
+                            try:
+                                confidence = float(self.svm_model.predict_proba(pca_feat)[0][prediction])
+                            except Exception:
+                                confidence = 1.0
+                            model_used = "SVM"
+                        except Exception as e:
+                            self.get_logger().error(f"[{self.robot_name}] Primary SVM inference failed: {e}. Falling back to XGBoost.")
+                            model_used = "XGBoost Fallback"
+                            if self.xgb_active and self.xgb_model:
+                                prediction = int(self.xgb_model.predict(pca_feat)[0])
+                                confidence = float(self.xgb_model.predict_proba(pca_feat)[0][prediction])
+                    elif self.xgb_active and self.xgb_model:
+                        prediction = int(self.xgb_model.predict(pca_feat)[0])
+                        confidence = float(self.xgb_model.predict_proba(pca_feat)[0][prediction])
+                        model_used = "XGBoost"
+
+                t_end = time.perf_counter()
+                latency_ms = (t_end - t_start) * 1000.0
+
+                # STEP 3 GÖRSEL ENJEKSİYON: Reconstruct mathematically honest XAI Heatmaps on-the-fly
+                output_image = perturbed_img
+                if prediction == 1: # Only map spatial attention if defect is detected (anomalous decision)
+                    output_image = self._generate_xai_overlay(perturbed_img)
+
+                # Publish processed view asynchronously to the ROS 2 Image topic
+                self._publish_ros_image(output_image)
+
+                # F. Latency Profiling
+                self._write_latency_to_csv(latency_csv_path, latency_ms, model_used)
+
+                # G. Global Anomali Alarm Yayını (Publishing)
+                self._publish_anomaly_alert(shelf_id, level, prediction, confidence, latency_ms, model_used)
+
+                self.get_logger().info(
+                    f"[{self.robot_name}] SCAN LEVEL {level}: Predict={prediction} (Conf={confidence:.2f}), "
+                    f"Model={model_used}, Latency={latency_ms:.3f}ms"
+                )
+
+        except Exception as e:
+            self.get_logger().error(f"[{self.robot_name}] Exception inside async scan thread: {e}")
+        finally:
+            self._inference_finished = True
+
+    def _write_latency_to_csv(self, filepath, latency_ms, model_used):
+        """Safely writes structured metric rows into target CSV documents."""
+        file_exists = os.path.exists(filepath)
+        try:
+            with open(filepath, mode="a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["timestamp", "robot_id", "model_used", "latency_ms"])
+                writer.writerow([
+                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                    self.robot_name,
+                    model_used,
+                    f"{latency_ms:.4f}"
+                ])
+        except Exception as e:
+            self.get_logger().error(f"[{self.robot_name}] Failed to write latency to CSV: {e}")
+
+    def _publish_anomaly_alert(self, shelf_id, level, prediction, confidence, latency_ms, model_used):
+        """Publishes the ML prediction outcome to the global fleet network."""
+        payload = {
+            "robot_id": self.robot_name,
+            "shelf_id": shelf_id,
+            "level": level,
+            "class_name": "damaged" if prediction == 1 else "intact",
+            "prediction": prediction,
+            "confidence": confidence,
+            "latency_ms": latency_ms,
+            "model_used": model_used,
+            "timestamp": int(self.get_clock().now().nanoseconds)
+        }
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.anomaly_pub.publish(msg)
+
+    def _generate_xai_overlay(self, perturbed_img):
+        """Generates mathematically honest Explainable AI (XAI) overlays based on SVM coefficients."""
+        # Ensure perturbed_img is a 3-channel color image for overlay blending
+        if len(perturbed_img.shape) == 2:
+            perturbed_color = cv2.cvtColor(perturbed_img, cv2.COLOR_GRAY2BGR)
+        else:
+            perturbed_color = perturbed_img.copy()
+
+        # Guard: Check if we have Scaler, PCA, Linear SVM, and valid coefficients
+        if not self.scaler or not self.pca or not self.svm_active or not hasattr(self.svm_model, "coef_"):
+            # If we cannot compute honest XAI (e.g. XGBoost is active), fallback to a clean sensor view
+            return perturbed_color
+
+        try:
+            # 1. Project Linear SVM decision boundary weights back to original 1924-dim space (W_raw = W_pca * V^T)
+            pca_weights = self.svm_model.coef_[0]
+            raw_weights = np.dot(pca_weights, self.pca.components_)
+            
+            # 2. Rescale using StandardScaler's scaling array to undo scaling influence
+            raw_weights_scaled = raw_weights / (self.scaler.scale_ + 1e-8)
+            
+            # 3. Extract the first 160 dimensions (Uniform Spatial LBP)
+            lbp_weights_magnitude = np.abs(raw_weights_scaled[:160])
+            
+            # 4. Sum the 10 bins of each of the 16 blocks to calculate spatial grid importance
+            block_importances = lbp_weights_magnitude.reshape(16, 10).sum(axis=1)
+            grid_importance = block_importances.reshape(4, 4)
+            
+            # 5. Normalize and upscale 4x4 grid to 128x128 via bilinear interpolation
+            grid_min, grid_max = grid_importance.min(), grid_importance.max()
+            grid_norm = ((grid_importance - grid_min) / (grid_max - grid_min + 1e-8) * 255).astype(np.uint8)
+            heatmap = cv2.resize(grid_norm, (128, 128), interpolation=cv2.INTER_LINEAR)
+            
+            # 6. Apply JET Colormap for visual overlay
+            heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+            
+            # 7. Blend 65% original camera view with 35% XAI decision boundary heatmap
+            overlay = cv2.addWeighted(perturbed_color, 0.65, heatmap_color, 0.35, 0)
+            return overlay
+
+        except Exception as e:
+            self.get_logger().error(f"[{self.robot_name}] Failed to generate XAI heatmap: {e}")
+            return perturbed_color
+
+    def _publish_ros_image(self, cv_img):
+        """Manually packs a CV2 image (BGR or Grayscale) into a ROS 2 Image message without CV Bridge dependency."""
+        msg = Image()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = f"{self.robot_name}/camera_optical_frame"
+        
+        if len(cv_img.shape) == 3: # BGR Color Image (XAI Overlay View)
+            msg.height = cv_img.shape[0]
+            msg.width = cv_img.shape[1]
+            msg.encoding = "bgr8"
+            msg.is_bigendian = 0
+            msg.step = cv_img.shape[1] * 3
+            msg.data = cv_img.tobytes()
+        else: # Single-Channel Grayscale Image (Sensor View)
+            msg.height = cv_img.shape[0]
+            msg.width = cv_img.shape[1]
+            msg.encoding = "mono8"
+            msg.is_bigendian = 0
+            msg.step = cv_img.shape[1]
+            msg.data = cv_img.tobytes()
+        
+        self.image_pub.publish(msg)
     
 def main(args=None):
     rclpy.init(args=args)
