@@ -53,4 +53,5 @@ src/mini_scripts/amcl_diagnose.py
 
 # Config/Misc
 .gitignore
+fix_&_plan.md
 

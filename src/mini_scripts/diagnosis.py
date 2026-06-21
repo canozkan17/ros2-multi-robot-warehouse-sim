@@ -281,17 +281,20 @@ class MultiRobotSystemDiagnosis(Node):
         if arrival_timestamp:
             alert_timestamp = time.time()
             latency_sec = alert_timestamp - arrival_timestamp
+            latency_ms = latency_sec * 1000.0  # conver to milliseconds
+            model_used = data.get("model_used", "SVM")  # get the model from the message
+
             self.get_logger().info(
-                f"[Metrics Engine] SUCCESS: Anomaly Alert Latency for '{shelf_id}' by {robot_id}: {latency_sec:.4f}s"
+                f"[Metrics Engine] SUCCESS: Anomaly Alert Latency for '{shelf_id}' by {robot_id}: {latency_ms:.2f}ms"
             )
 
-            headers = ["timestamp", "robot_id", "shelf_id", "class_name", "latency_sec"]
+            # anomaly_latency.csv match
+            headers = ["timestamp", "robot_id", "model_used", "latency_ms"]
             row = [
                 time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                 str(robot_id),
-                str(shelf_id),
-                str(class_name),
-                f"{latency_sec:.4f}"
+                str(model_used),
+                f"{latency_ms:.4f}"
             ]
             self._write_csv_entry(self.anomaly_latency_csv_path, headers, row)
 

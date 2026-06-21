@@ -17,6 +17,7 @@ from typing import Optional, Tuple, Any
 
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
+from warehouse_multi_robot.config import STALL_CANDIDATE_TIMEOUT_SEC, STALL_DIRECT_TIMEOUT_SEC
 
 
 # ==============================================================================
@@ -73,8 +74,8 @@ class RecoveryManager:
         self.maneuver_end_timestamp_ns = 0
         
         # Constants
-        self.STALL_THRESHOLD_S = 12.0
-        self.DIRECT_STALL_THRESHOLD_S = 10.0
+        self.STALL_THRESHOLD_S = STALL_CANDIDATE_TIMEOUT_SEC
+        self.DIRECT_STALL_THRESHOLD_S = STALL_DIRECT_TIMEOUT_SEC
         self.PROGRESS_EPSILON_M = 0.03  # Robot must move at least 3cm within threshold
         
         # Physical Escape Configuration (0.2m backward, 0.12m/s speed)

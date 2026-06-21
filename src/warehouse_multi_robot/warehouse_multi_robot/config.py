@@ -84,7 +84,8 @@ SCAN_DURATION_SEC = 2.0
 # ==============================================================================
 # Maximum allowed duration (in seconds) with zero progress before assuming 
 # the robot is stuck or blocked by an obstacle
-STALL_TIMEOUT_SEC = 5.0
+STALL_CANDIDATE_TIMEOUT_SEC = 12.0
+STALL_DIRECT_TIMEOUT_SEC = 10.0
 
 # Recovery Maneuvers Config
 RECOVERY_BACKWARD_DURATION_SEC = 0.8
