@@ -161,6 +161,9 @@ class DashboardROS2Node(Node):
         # Publisher to trigger global mission arm dispatch
         self.mission_armed_pub = self.create_publisher(Bool, "/mission_start", qos_transient)
 
+        # Publisher to dynamically toggle logging state in the diagnostics node
+        self.logging_enable_pub = self.create_publisher(Bool, "/diagnostics/enable_logging", qos_transient)
+
         self.get_logger().info("[Dashboard ROS2] Subscriptions armed. Quiet listening active.")
 
     def trigger_mission_start(self):
@@ -168,6 +171,12 @@ class DashboardROS2Node(Node):
         msg = Bool()
         msg.data = True
         self.mission_armed_pub.publish(msg)
+
+    def publish_logging_state(self, state: bool):
+        """Publishes the telemetry logging authorization state to the fleet network."""
+        msg = Bool()
+        msg.data = state
+        self.logging_enable_pub.publish(msg)
 
     def inject_failure(self, robot_name: str):
         """Publishes FAILED JSON telemetry block to target robot to trigger reallocation."""
@@ -255,6 +264,9 @@ class FleetInspectionDashboard(QMainWindow):
         self.proximity_violations = 0
         self.anomaly_latencies = []
         self.start_time = None
+        
+        # Local state tracker for recording state
+        self.logging_active = False
 
         self._setup_style()
         self._build_layout()
@@ -426,6 +438,12 @@ class FleetInspectionDashboard(QMainWindow):
         btn_layout.addWidget(self.btn_dispatch)
         btn_layout.addWidget(self.btn_estop)
         layout.addLayout(btn_layout)
+
+        # Record Telemetry Button (Placed directly below Arm Dispatch, initially grey)
+        self.btn_record = QPushButton("RECORD TELEMETRY")
+        self.btn_record.setStyleSheet("background-color: #4C566A; color: #ECEFF4;")
+        self.btn_record.clicked.connect(self._handle_toggle_record)
+        layout.addWidget(self.btn_record)
 
         # ADD STRETCH: Packs cards tightly at top, killing internal vertical dead space inside Left Panel
         layout.addStretch(1)
@@ -654,12 +672,38 @@ class FleetInspectionDashboard(QMainWindow):
     def _handle_dispatch(self):
         self.log_terminal.append("[CMD SENT] Sending Volatile Trigger to arm all robot agents...")
         self.ros2_node.trigger_mission_start()
+        
+        # Dispatching automatically forces telemetry logging to active green state
+        if not self.logging_active:
+            self._set_recording_state(True)
 
     def _handle_estop(self):
         self.log_terminal.append("<font color='#FF3333'>[EMERGENCY] ESTOP SHUTDOWN TRIGGERED! Sending failsafe command...</font>")
         # Inject failure to all robots to stop motion
         for name in ["robot1", "robot2", "robot3"]:
             self.ros2_node.inject_failure(name)
+            
+        # Emergency stop automatically turns off logging to prevent corrupt data
+        if self.logging_active:
+            self._set_recording_state(False)
+
+    def _handle_toggle_record(self):
+        """Toggles the telemetry recording state upon direct user interaction."""
+        self._set_recording_state(not self.logging_active)
+
+    def _set_recording_state(self, state: bool):
+        """Updates UI representation and publishes the state to the ROS2 diagnostics node."""
+        self.logging_active = state
+        self.ros2_node.publish_logging_state(state)
+        
+        if state:
+            self.btn_record.setText("RECORDING")
+            self.btn_record.setStyleSheet("background-color: #2ECC71; color: #ECEFF4;")
+            self.log_terminal.append("[SYSTEM] Telemetry recording initiated (ACTIVE).")
+        else:
+            self.btn_record.setText("RECORDING INACTIVE")
+            self.btn_record.setStyleSheet("background-color: #BF616A; color: #ECEFF4;")
+            self.log_terminal.append("[SYSTEM] Telemetry recording paused (INACTIVE).")
 
     def _handle_inject_failure(self):
         target_robot = self.combo_robots.currentText()

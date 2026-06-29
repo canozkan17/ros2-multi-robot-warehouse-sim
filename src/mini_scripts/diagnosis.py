@@ -94,6 +94,9 @@ class MultiRobotSystemDiagnosis(Node):
         self.latency_recorded: bool = False
         self.coverage_recorded: bool = False
 
+        # Asynchronous telemetry logging authorization flag (Default: False)
+        self.logging_enabled: bool = False
+
         # Chronometer registers for Total Warehouse Audit Time
         self.mission_start_time: Optional[float] = None
         self.mission_end_time: Optional[float] = None
@@ -119,6 +122,14 @@ class MultiRobotSystemDiagnosis(Node):
         qos_claims = QoSProfile(
             depth=100,
             reliability=ReliabilityPolicy.RELIABLE
+        )
+
+        # Telemetry control subscription linked to PyQt5 dashboard commands
+        self.create_subscription(
+            Bool,
+            "/diagnostics/enable_logging",
+            self._enable_logging_callback,
+            10
         )
 
         # Subscribe to robot poses, statuses, and reallocation messages
@@ -171,8 +182,8 @@ class MultiRobotSystemDiagnosis(Node):
         )
 
         # 7. Low-Frequency Summary Trigger Timers
-        self.diagnostic_timer = self.create_timer(1.0, self._diagnostic_tick)  # Run slower (1Hz) to save processing
-        self.summary_timer = self.create_timer(10.0, self._print_system_state_summary)  # Print full report every 10s
+        # Keep diagnostic safety checks running but eliminate summary timer to prevent console pollution
+        self.diagnostic_timer = self.create_timer(1.0, self._diagnostic_tick)
 
         self.get_logger().info("[Diagnosis] Flight Recorder initialized. Quiet mode active.")
 
@@ -428,8 +439,19 @@ class MultiRobotSystemDiagnosis(Node):
             ]
             self._write_csv_entry(self.latency_csv_path, headers, row)
 
+    def _enable_logging_callback(self, msg: Bool):
+        """Asynchronously updates the logging authorization state from user dashboard events."""
+        self.logging_enabled = msg.data
+        if self.logging_enabled:
+            self.get_logger().info("[Metrics Engine] Telemetry recording is now ACTIVE.")
+        else:
+            self.get_logger().warn("[Metrics Engine] Telemetry recording is now INACTIVE. CSV writes suspended.")
+
     def _write_csv_entry(self, filepath: str, headers: list, row: list):
-        """Safely writes structured metric rows into target CSV documents."""
+        """Safely writes structured metric rows into target CSV documents if logging is authorized."""
+        if not self.logging_enabled:
+            return  # Quietly drop database inserts when telemetry tracking is inactive
+
         file_exists = os.path.exists(filepath)
         try:
             with open(filepath, mode="a", newline="") as f:
