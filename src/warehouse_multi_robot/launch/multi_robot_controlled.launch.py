@@ -529,10 +529,37 @@ def generate_launch_description():
         return actions
 
     # ── static actions ────────────────────────────────────────────────────────
+    # Extract GUI environment variables from current user shell before building LaunchDescription list
+    gui_env = {}
+    for var in ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY']:
+        if var in os.environ:
+            gui_env[var] = os.environ[var]
+
     return LaunchDescription([
         SetEnvironmentVariable('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'),
         SetEnvironmentVariable('GALLIUM_DRIVER', 'd3d12'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', fuel_path),
+        # Force Qt elements to fall back to X11 (XWayland) to enable xdotool geometry operations
+        SetEnvironmentVariable('QT_QPA_PLATFORM', 'xcb'),
+
+        # Launch the Monitoring Dashboard with explicit GUI environment propagation
+        Node(
+            package='warehouse_multi_robot',
+            executable='monitoring_dashboard',
+            name='monitoring_dashboard',
+            parameters=[{'use_sim_time': True}],
+            additional_env=gui_env,
+            output='screen',
+        ),
+
+        # Start the background Tiling Motor as an official ROS2 Node
+        Node(
+            package='warehouse_multi_robot',
+            executable='window_tiler',
+            name='window_tiler',
+            additional_env=gui_env,
+            output='screen'
+        ),
 
         # Gazebo sim server — on_exit_shutdown=true: if sim dies, kill everything
         IncludeLaunchDescription(

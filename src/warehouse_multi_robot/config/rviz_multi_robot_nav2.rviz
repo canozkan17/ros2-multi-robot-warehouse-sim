@@ -1,35 +1,4 @@
-Panels:
-  - Class: rviz_common/Displays
-    Help Height: 78
-    Name: Displays
-    Property Tree Widget:
-      Expanded:
-        - /Global Options1
-        - /TF1
-        - /robot1_map1
-        - /robot1_local_costmap1
-        - /robot2_local_costmap1
-        - /robot3_local_costmap1
-        - /robot1_global_plan1
-        - /robot1_local_plan1
-        - /robot2_global_plan1
-        - /robot2_local_plan1
-        - /robot3_global_plan1
-        - /robot3_local_plan1
-      Splitter Ratio: 0.5
-    Tree Height: 400
-  - Class: rviz_common/Selection
-    Name: Selection
-  - Class: rviz_common/Tool Properties
-    Expanded:
-      - /2D Pose Estimate1
-    Name: Tool Properties
-    Splitter Ratio: 0.5886790156364441
-  - Class: rviz_common/Views
-    Expanded:
-      - /Current View1
-    Name: Views
-    Splitter Ratio: 0.5
+Panels: ~
 Visualization Manager:
   Class: ""
   Displays:

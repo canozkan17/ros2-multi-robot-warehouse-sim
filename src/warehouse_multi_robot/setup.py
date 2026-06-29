@@ -45,6 +45,8 @@ setup(
             'battery_monitor = warehouse_multi_robot.battery_monitor:main',
             'mission_gate = warehouse_multi_robot.mission_gate:main',
             'imu_relay = warehouse_multi_robot.imu_relay:main',
+            'monitoring_dashboard = warehouse_multi_robot.monitoring_dashboard:main',
+            'window_tiler = warehouse_multi_robot.window_tiler:main',
         ],
     },
 )
