@@ -1,0 +1,22 @@
+\chapter{Experimental Evaluation and Results\label{cha:chapter8}}
+
+\section{Steady-State Mission Efficiency (Scalability: 1 vs 2 vs 3 Robots)}
+\section{Classifier Training, Accuracy, and Real-Time Inference Latency}
+\section{Fault-Tolerance Performance (Re-allocation Delay, Coverage Loss)}
+\section{Anomaly Detection Latency and Analytical Redundancy Fallback Benchmarks}
+\section{Explainable AI Validation (Qualitative Feature Attribution Analysis)}
+\section{Model Generalization and Dataset Limitations}
+\section{Comparative Discussion and State-of-the-Art Benchmarking}
+
+
+\subsection{Mathematical Formulations for Mobile Cluster Waypoint Generation}
+
+        Mobile Clustering for Dynamic Inventory Asset Grouping
+
+Dimensional configuration cost incurred by multi-agent task allocation is avoided by dynamically grouping the non-stationary inventory assets located in the logistics facility. Namely, particular mobile pallet entities, identified as \texttt{pallet\_box\_mobile}, \texttt{pallet\_box\_mobile\_0}, and \texttt{pallet\_box\_mobile\_1}, display extremely unstable positions in relation to the logistics process. To properly group these dynamic agents for the decentralized sweep protocol, the spatial parser utilizes an artificial clustering technique. The centroids of the detected mobile pallets are grouped to form one virtual object called \texttt{mobile\_cluster}.
+
+The coordinates of this object are represented through the geometric mean of the centroids of the corresponding pallets:
+
+\[ c_{\text{cluster}} = \left( \frac{1}{M} \sum_{k=1}^{M} x_k, \quad \frac{1}{M} \sum_{k=1}^{M} y_k \right) \]
+
+where $M = 3$ denotes the number of the mobile pallets in the subset. Using the generation of unified orthogonal poses of the cluster segments along the global $X$-axis and a deterministic North-to-South sweeping order (by descending $Y$-coordinates), the multi-agent task allocator avoids local planning issues and redundant entries of the sweep corridors.

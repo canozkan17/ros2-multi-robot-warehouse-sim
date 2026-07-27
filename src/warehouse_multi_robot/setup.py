@@ -41,7 +41,6 @@ setup(
     entry_points={
         'console_scripts': [
             'waypoint_sender = warehouse_multi_robot.waypoint_sender:main',
-            'agent_coordinator = warehouse_multi_robot.agent_coordinator:main',
             'battery_monitor = warehouse_multi_robot.battery_monitor:main',
             'mission_gate = warehouse_multi_robot.mission_gate:main',
             'imu_relay = warehouse_multi_robot.imu_relay:main',

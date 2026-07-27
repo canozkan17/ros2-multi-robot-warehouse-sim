@@ -93,6 +93,7 @@ class MultiRobotSystemDiagnosis(Node):
         self.pre_fail_completed_count: int = 0
         self.latency_recorded: bool = False
         self.coverage_recorded: bool = False
+        self.pending_reallocation_event: Optional[Dict[str, Any]] = None
 
         # Asynchronous telemetry logging authorization flag (Default: False)
         self.logging_enabled: bool = False
@@ -112,6 +113,18 @@ class MultiRobotSystemDiagnosis(Node):
         self.coverage_csv_path = "/home/canozkan/thesis_ws/coverage_loss.csv"
         self.anomaly_latency_csv_path = "/home/canozkan/thesis_ws/anomaly_latency.csv"
         self.total_audit_csv_path = "/home/canozkan/thesis_ws/total_audit_time.csv"
+
+        # Traveled distance and localization step registers
+        self.agents_traveled_distance: Dict[str, float] = {
+            "robot1": 0.0,
+            "robot2": 0.0,
+            "robot3": 0.0
+        }
+        self.agents_last_coord: Dict[str, Optional[Tuple[float, float]]] = {
+            "robot1": None,
+            "robot2": None,
+            "robot3": None
+        }
 
         # 6. Asynchronous Subscriptions Setup
         qos_transient = QoSProfile(
@@ -154,12 +167,14 @@ class MultiRobotSystemDiagnosis(Node):
                 lambda msg, r_name=robot_name: self._robot_battery_callback(msg, r_name),
                 10
             )
-            self.create_subscription(
-                String,
-                f"/{robot_name}/add_waypoints",
-                lambda msg, r_name=robot_name: self._add_waypoints_callback(msg, r_name),
-                10
-            )
+
+        # Single absolute global subscriber matching the core fleet network reallocation topic
+        self.create_subscription(
+            String,
+            "/add_waypoints",
+            self._add_waypoints_callback,
+            10
+        )
 
         # Global system topics
         self.create_subscription(String, "/side_claims", self._side_claims_callback, qos_claims)
@@ -210,7 +225,7 @@ class MultiRobotSystemDiagnosis(Node):
         )
 
     def _amcl_pose_callback(self, msg: PoseWithCovarianceStamped, robot_name: str):
-        """Asynchronously captures active estimated coordinates of target robot."""
+        """Asynchronously captures active estimated coordinates of target robot and integrates traveled distance."""
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         
@@ -219,6 +234,16 @@ class MultiRobotSystemDiagnosis(Node):
 
         self.agents_pose[robot_name] = (x, y, yaw)
         self.agents_last_update[robot_name] = time.time()
+
+        # Calculate step distance to integrate total traveled distance
+        last_coord = self.agents_last_coord[robot_name]
+        if last_coord is not None:
+            step_distance = math.hypot(x - last_coord[0], y - last_coord[1])
+            # Suppress any simulation teleportation spikes above 5.0 meters per tick
+            if step_distance < 5.0:
+                self.agents_traveled_distance[robot_name] += step_distance
+
+        self.agents_last_coord[robot_name] = (x, y)
 
     def _robot_status_callback(self, msg: String, robot_name: str):
         """Monitors local status states and records timestamps to measure allocation latency."""
@@ -257,6 +282,10 @@ class MultiRobotSystemDiagnosis(Node):
                     f"[Metrics Engine] Detected failure of '{robot_name}' at {self.failure_time:.3f}s. "
                     f"Completed prior to failure: {self.pre_fail_completed_count} waypoints."
                 )
+
+                # If a reallocation announcement already arrived before this failure
+                # transition was processed, finalize the metric now.
+                self._flush_pending_reallocation_latency()
 
     def _robot_battery_callback(self, msg: String, robot_name: str):
         """Monitors battery levels from the hardware monitor."""
@@ -396,14 +425,16 @@ class MultiRobotSystemDiagnosis(Node):
             self.get_logger().info(f"[EVENT] Task Completed: {robot_id} reached '{shelf_id}'")
             self._print_system_state_summary()
 
-    def _add_waypoints_callback(self, msg: String, coordinator_robot_name: str):
-        """Validates reallocation packets and calculates reallocation latency (Task 4)."""
+    def _add_waypoints_callback(self, msg: String):
+        """Asynchronously validates reallocation packets and calculates reallocation latency."""
         try:
             data = json.loads(msg.data)
         except json.JSONDecodeError:
             return
 
         failed_robot = data.get("failed_robot")
+        coordinator_robot_name = data.get("trigger_robot", "unknown")
+        
         if not failed_robot:
             return
 
@@ -421,23 +452,19 @@ class MultiRobotSystemDiagnosis(Node):
             )
 
         # Latency Calculation
-        if self.failure_time is not None and failed_robot == self.failed_robot_name and not self.latency_recorded:
+        if failed_robot == self.failed_robot_name and not self.latency_recorded:
             realloc_time = time.time()
-            latency_sec = realloc_time - self.failure_time
-            self.latency_recorded = True
-
-            self.get_logger().warn(
-                f"[Metrics Engine] SUCCESS: Re-allocation Latency measured: {latency_sec:.4f} seconds!"
-            )
-
-            headers = ["timestamp", "failed_robot", "coordinator_robot", "latency_sec"]
-            row = [
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                failed_robot,
-                coordinator_robot_name,
-                f"{latency_sec:.4f}"
-            ]
-            self._write_csv_entry(self.latency_csv_path, headers, row)
+            if self.failure_time is not None:
+                self._write_reallocation_latency(failed_robot, coordinator_robot_name, realloc_time)
+            else:
+                # The coordinator can broadcast the reallocation before this node
+                # processes the FAILED transition. Buffer the first event so the
+                # metric is not lost.
+                self.pending_reallocation_event = {
+                    "failed_robot": failed_robot,
+                    "coordinator_robot": coordinator_robot_name,
+                    "realloc_time": realloc_time,
+                }
 
     def _enable_logging_callback(self, msg: Bool):
         """Asynchronously updates the logging authorization state from user dashboard events."""
@@ -461,6 +488,63 @@ class MultiRobotSystemDiagnosis(Node):
                 writer.writerow(row)
         except Exception as e:
             self.get_logger().error(f"[Metrics Engine] Failed to write CSV entry to {filepath}: {e}")
+
+    def _robot_state_snapshot(self) -> Tuple[str, str]:
+        """Returns comma-separated active and failed robot snapshots for CSV output."""
+        active_robots = []
+        failed_robots = []
+
+        for robot_name in sorted(self.robot_statuses.keys()):
+            if self.robot_statuses.get(robot_name, "UNKNOWN") == "FAILED":
+                failed_robots.append(robot_name)
+            else:
+                active_robots.append(robot_name)
+
+        return ",".join(active_robots), ",".join(failed_robots)
+
+    def _write_reallocation_latency(self, failed_robot: str, coordinator_robot_name: str, realloc_time: float):
+        """Writes the first reallocation latency event once both timestamps are available."""
+        if self.failure_time is None or self.latency_recorded:
+            return
+
+        latency_sec = realloc_time - self.failure_time
+        if latency_sec < 0.0:
+            self.get_logger().warn(
+                f"[Metrics Engine] Reallocation arrived before failure detection for '{failed_robot}'. "
+                f"Clamping latency to 0.0s."
+            )
+            latency_sec = 0.0
+
+        self.latency_recorded = True
+
+        self.get_logger().warn(
+            f"[Metrics Engine] SUCCESS: Re-allocation Latency measured: {latency_sec:.4f} seconds!"
+        )
+
+        active_robots, failed_robots = self._robot_state_snapshot()
+        headers = ["timestamp", "failed_robot", "coordinator_robot", "latency_sec", "active_robots", "failed_robots"]
+        row = [
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            failed_robot,
+            coordinator_robot_name,
+            f"{latency_sec:.4f}",
+            active_robots,
+            failed_robots,
+        ]
+        self._write_csv_entry(self.latency_csv_path, headers, row)
+
+    def _flush_pending_reallocation_latency(self):
+        """Finalizes a buffered reallocation event if one was received before failure detection."""
+        if not self.pending_reallocation_event or self.latency_recorded:
+            return
+
+        pending = self.pending_reallocation_event
+        self.pending_reallocation_event = None
+        self._write_reallocation_latency(
+            str(pending["failed_robot"]),
+            str(pending["coordinator_robot"]),
+            float(pending["realloc_time"]),
+        )
 
     def _diagnostic_tick(self):
         """Executes safety boundaries, inter-robot proximity, and metric completions checks at 1Hz."""
@@ -563,22 +647,38 @@ class MultiRobotSystemDiagnosis(Node):
                 f"" + "="*50 + "\n"
             )
 
-            # Write overall statistics to total_audit_time.csv
-            headers_audit = ["timestamp", "failed_robot", "total_completed", "duration_sec", "proximity_violations"]
+            # Write overall statistics with integrated traveled distances and battery levels to total_audit_time.csv
+            active_robots, failed_robots = self._robot_state_snapshot()
+            headers_audit = [
+                "timestamp", "failed_robot", "total_completed", "duration_sec", 
+                "proximity_violations", "robot1_dist_m", "robot2_dist_m", "robot3_dist_m",
+                "robot1_final_batt", "robot2_final_batt", "robot3_final_batt",
+                "active_robots", "failed_robots"
+            ]
             row_audit = [
                 time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                 str(self.failed_robot_name or "None"),
                 str(final_completed),
                 f"{total_duration_sec:.2f}",
-                str(self.proximity_violation_count)
+                str(self.proximity_violation_count),
+                f"{self.agents_traveled_distance['robot1']:.2f}",
+                f"{self.agents_traveled_distance['robot2']:.2f}",
+                f"{self.agents_traveled_distance['robot3']:.2f}",
+                f"{self.robot_batteries['robot1']:.2f}",
+                f"{self.robot_batteries['robot2']:.2f}",
+                f"{self.robot_batteries['robot3']:.2f}",
+                active_robots,
+                failed_robots,
             ]
             self._write_csv_entry(self.total_audit_csv_path, headers_audit, row_audit)
 
             # Write specific coverage loss to coverage_loss.csv only if a failure occurred
             if self.failed_robot_name:
+                active_robots, failed_robots = self._robot_state_snapshot()
                 headers = [
                     "timestamp", "failed_robot", "pre_fail_completed", 
-                    "final_completed", "total_waypoints", "coverage_percent", "coverage_loss"
+                    "final_completed", "total_waypoints", "coverage_percent", "coverage_loss",
+                    "active_robots", "failed_robots"
                 ]
                 row = [
                     time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
@@ -587,7 +687,9 @@ class MultiRobotSystemDiagnosis(Node):
                     str(final_completed),
                     str(self.total_target_waypoints),
                     f"{coverage_percent:.2f}",
-                    str(coverage_loss_count)
+                    str(coverage_loss_count),
+                    active_robots,
+                    failed_robots,
                 ]
                 self._write_csv_entry(self.coverage_csv_path, headers, row)
 
