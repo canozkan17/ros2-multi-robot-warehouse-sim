@@ -1,8 +1,15 @@
 \chapter{Steady-State System Design and Theoretical Framework\label{cha:chapter5}}
 
-This chapter contains the theoretical framework and steady-state design for the autonomy stack of the warehousing fleet under nominal conditions. The design incorporates physical domain constraints and leverages edge processing for the runtime cognitive processing pipeline. This baseline consists of three interlocked levels. The first deals with energy-aware kinematics, balancing the robot's power consumption while relying on a regulated tracking paradigm \cite{macenski2020marathon}. The second implements decentralized coordination, enabling collision-free spatial navigation via peer-to-peer decentralized spatial mutexes and removing the single point of failure embodied by the centralized dispatchers \cite{ricart1981optimal}. The third level utilizes edge processing to enable real-time simulation environment parsing and the fused computer vision pipeline using uniform LBP and HOG descriptors for the real-time perception of the environment \cite{ojala2002multiresolution}. These three levels form a set of mutually dependent steady-state models, defining the high-level constraints for the multi-agent system's behavior. This operational envelope, therefore, serves as a baseline for the hierarchical fault-tolerant framework introduced in Chapter 6.
+This chapter contains the theoretical framework and steady-state design for the autonomy stack of the warehousing fleet under nominal conditions. The design incorporates physical domain constraints and leverages edge processing for the runtime cognitive processing pipeline. This baseline consists of three interlocked levels. The first deals with energy-aware kinematics, balancing the robot's power consumption while relying on a regulated tracking paradigm \cite{macenski2023regulated}. The second implements decentralized coordination, enabling collision-free spatial navigation via peer-to-peer decentralized spatial mutexes and removing the single point of failure embodied by the centralized dispatchers \cite{ricart1981optimal}. The third level utilizes edge processing to enable real-time simulation environment parsing and the fused computer vision pipeline using uniform LBP and HOG descriptors for the real-time perception of the environment \cite{ojala2002multiresolution}. These three levels form a set of mutually dependent steady-state models, defining the high-level constraints for the multi-agent system's behavior. This operational envelope, therefore, serves as a baseline for the hierarchical fault-tolerant framework introduced in Chapter 6.
 
 This particular structural workflow has been captured in the form of a steady-state system architecture pipeline, namely, Figure~\ref{fig:steady_state_architecture}. In this figure, nominal processing loops have been depicted, illustrating how low-level telemetry feeds into high-level distributed coordination and computer vision layers, creating a predictive, multi-tiered pipeline in which all stages are deterministic, i.e., the processing in one layer serves as an input boundary condition for processing in the subsequent layer.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{fig_5_1_steady_state_architecture.pdf}
+    \caption{Steady-state system architecture pipeline illustrating nominal processing loops, edge perception, low-level telemetry, and P2P decentralized coordination layers.}
+    \label{fig:steady_state_architecture}
+\end{figure}
 
 \section{Hybrid Battery Modeling and Energy Consumption Formulations}
 
@@ -10,11 +17,11 @@ This particular structural workflow has been captured in the form of a steady-st
 
 A monolithic discharge curve that linearly depends on time spent in a mission confuses the difference between a robot that has been waiting at a waypoint and one that has been driving at full throttle down a narrow aisle; the only difference between the two is the amount of time spent performing the task. This does not account for the amount of torque applied and the resulting current draw by the wheels during rotations, especially during the tight turns in narrow aisle intersections mandated by the problem geometry. A robot that is parked in a vertical scanning state consumes power, but nowhere near the amount of current that the same robot would during the backward drive, rotation, or other maneuvers to escape a collision or inspection waypoints. Pooling the two discharge multipliers together loses the signal needed to accurately monitor energy depletion levels. A robot that spends most of a mission in idle inspection waypoints should not have a similar charge estimate to a robot that spends the same real time in dynamic translational and rotational trajectories
 
-As a result, the hybrid discharge model separates the two power loss processes rather than considering a first-order approximation of the two as a single coefficient. First, a static term covers idle power consumption associated with non-translation motion as well as the background computational overhead of the onboard processing pipeline. Second, a term that depends on the distance driven captures the additional current draw by the drivetrain during rotations and forward motion. This choice reflects the telemetry resolution the battery monitoring system provides to the task allocation system on a $10\,\text{Hz}$ control loop rather than attempting to capture instantaneous current consumption as one would implement in a full electromechanical battery model as seen in \cite{mei2005case}.
+As a result, the hybrid discharge model separates the two power loss processes rather than considering a first-order approximation of the two as a single coefficient. First, a static term covers idle power consumption associated with non-translation motion as well as the background computational overhead of the onboard processing pipeline~\cite{mohamed2021energy}. Second, a term that depends on the distance driven captures the additional current draw by the drivetrain during rotations and forward motion. This choice reflects the telemetry resolution the battery monitoring system provides to the task allocation system on a $10\,\text{Hz}$ control loop rather than attempting to capture instantaneous current consumption as one would implement in a full electromechanical battery model as seen in \cite{mei2005case, realtime2026estimation}.
 
 \subsection{Mathematical Formalization of the Hybrid Decay Function}
 
-To capture the physics of the discharge during regular warehouse operations, a hybrid decay function was implemented to emulate the battery's capacity as a function of the robot's energy expenditure throughout the mission cycle. In particular, the agent's energy consumption follows the non-linear hybrid decay model:
+To capture the physics of the discharge during regular warehouse operations, a hybrid decay function was implemented to emulate the battery's capacity as a function of the robot's energy expenditure throughout the mission cycle \cite{energy2026constrained, realtime2026estimation}. In particular, the agent's energy consumption follows the non-linear hybrid decay model:
 \begin{equation}
 E(t) = E_{\text{start}} - \left( \lambda_{\text{idle}} \cdot t + \eta_{\text{dynamic}} \cdot \int_{0}^{t} \| \mathbf{v}(\tau) \|_2 \, d\tau \right) \label{eq:hybrid_decay_continuous}
 \end{equation}
@@ -39,9 +46,16 @@ In order to avoid artificial inflation of the cumulative mission energy, the sta
 \begin{equation}
 \Delta d_{k, \text{filtered}} = \begin{cases} \Delta d_k & \text{if } \Delta d_k < \delta_{\text{warp}} \\ 0 & \text{if } \Delta d_k \ge \delta_{\text{warp}} \end{cases} \label{eq:teleportation_filter}
 \end{equation}
-which ensures that the step size does not exceed $\delta_{\text{warp}} = 5.0\text{ m}$. This is a reasonable bound, given the differential constraints of the robot platform, which renders most of the non-physical position jumps in $\Delta d_k$ filtered out, thus preventing the artificial inflation of the cumulative mission energy in Eq.~\ref{eq:hybrid_decay_discrete}.
+which ensures that the step size does not exceed $\delta_{\text{warp}} = 5.0\text{ m}$. This is a reasonable bound, given the differential constraints of the robot platform, which renders most of the non-physical position jumps in $\Delta d_k$ filtered out, thus preventing the artificial inflation of the cumulative mission energy in Eq.~\ref{eq:hybrid_decay_discrete} (see Figure~\ref{fig:battery_pipeline}).
 
-While this discrete-time representation mathematically characterizes the energy states at major decision epochs, the onboard battery monitoring module implements this formulation via decoupled tracking threads. Specifically, the static idle decay term is evaluated continuously on a fixed $10\,\text{Hz}$ local telemetry control loop, whereas the dynamic mileage integration accumulates discrete displacement steps between consecutive estimator publications, ensuring that micro-movements are continuously accumulated. For the particular choice of the robot platform, the value of $\lambda_{\text{idle}}$ was set to induce a linear discharge of $0.02\,\%\,\text{s}^{-1}$ during idle periods, corresponding to approximately 0.002\% capacity loss per $10\,\text{Hz}$ control loop iteration. Furthermore, the dynamic component of the hybrid discharge model was calibrated with the coefficient $\eta_{\text{dynamic}} = 0.15\,\%\,\text{m}^{-1}$ to account for the effective current draw characteristics of the drivetrain on the concrete floor of the warehouse facility. By virtue of the simplified parametrization, the computation of the hybrid discharge model is performed at the battery management level with minimal overhead, thus bypassing the substantial CPU and memory overhead of the raw telemetry parsing and message unpacking at the high update rates described in \cite{mei2005case}.
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_5_1_battery_pipeline.pdf}
+\caption{Hybrid battery discharge pipeline: AMCL-based displacement tracking, teleportation filtering, and combination of static and dynamic loss terms into the discharge function of Eq.~\ref{eq:hybrid_decay_discrete}.}
+\label{fig:battery_pipeline}
+\end{figure}
+
+While this discrete-time representation mathematically characterizes the energy states at major decision epochs, the onboard battery monitoring module implements this formulation via decoupled tracking threads. Specifically, the static idle decay term is evaluated continuously on a fixed $10\,\text{Hz}$ local telemetry control loop, whereas the dynamic mileage integration accumulates discrete displacement steps between consecutive estimator publications, ensuring that micro-movements are continuously accumulated. For the particular choice of the robot platform, the value of $\lambda_{\text{idle}}$ was set to induce a linear discharge of $0.02\,\%\,\text{s}^{-1}$ during idle periods, corresponding to approximately 0.002\% capacity loss per $10\,\text{Hz}$ control loop iteration. Furthermore, the dynamic component of the hybrid discharge model was calibrated with the coefficient $\eta_{\text{dynamic}} = 0.15\,\%\,\text{m}^{-1}$ to account for the effective current draw characteristics of the drivetrain on the concrete floor of the warehouse facility. By virtue of the simplified parametrization, the computation of the hybrid discharge model is performed at the battery management level with minimal overhead, thus bypassing the substantial CPU and memory overhead of the raw telemetry parsing and message unpacking at the high update rates.
 
 \section{Spatial Mutex Mechanics and Peer-to-Peer DDS Coordination}
 
@@ -51,15 +65,17 @@ To resolve this issue for multi-agent telemetry, the diagnostic framework has to
 
 \subsection{Decentralized Coordination vs. Centralized Failure Modes}
 
-Multi-agent fleet management typically relies on centralized dispatch servers that allocate trajectories and resolve spatial conflicts. While such approaches are typically computationally light, they have a single point of failure and require uninterrupted communications from every robot in the fleet to the master controller. In practice, this is a questionable assumption in large-scale warehouse environments where deep steel shelves create wireless dead zones and multi-path fading. A central controller cannot safely arbitrate collisions in a steel-enclosed aisle if one of the robots in it has lost radio contact. Our decentralized P2P coordination approach breaks this centralized single point of failure by pushing the arbitration logic into the agents. Acting as independent edge nodes, the robots coordinate their movements on the industrial floor utilizing a decentralized, brokerless data distribution paradigm native to the fleet's coordinated communication framework \cite{maruyama2016exploring}. 
+Multi-agent fleet management typically relies on centralized dispatch servers that allocate trajectories and resolve spatial conflicts~\cite{gupta2025robotfleet}. While such approaches are typically computationally light, they have a single point of failure and require uninterrupted communications from every robot in the fleet to the master controller. In practice, this is a questionable assumption in large-scale warehouse environments where deep steel shelves create wireless dead zones and multi-path fading. A central controller cannot safely arbitrate collisions in a steel-enclosed aisle if one of the robots in it has lost radio contact. Our decentralized P2P coordination approach breaks this centralized single point of failure by pushing the arbitration logic into the agents. Acting as independent edge nodes, the robots coordinate their movements on the industrial floor utilizing a decentralized, brokerless data distribution paradigm native to the fleet's coordinated communication framework \cite{macenski2022robot}. 
 
 \subsection{Corridor Spatial Mutex Formulations and Shared Corridors}
 
-The central problem of a decentralized approach is preventing deadlocks in confined spaces. Whereas most open regions allow for sufficient lateral space for two robots to safely pass each other, narrow aisles have insufficient width for such a maneuver. Specifically, the narrow aisle width was found to be less than twice the robot's safety radius plus an epsilon-long robot-specific margin \cite{ricart1981optimal}. Therefore, the local costmaps of robots approaching each other from opposite ends of the aisle would erroneously inflate their respective walls and the other robot's body, making mutual passage impossible.
+The central problem of a decentralized approach is preventing deadlocks in confined spaces. Whereas most open regions allow for sufficient lateral space for two robots to safely pass each other, narrow aisles have insufficient width for such a maneuver. Specifically, the narrow aisle width was found to be less than twice the robot's safety radius plus an epsilon-long robot-specific margin. Therefore, the local costmaps of robots approaching each other from opposite ends of the aisle would erroneously inflate their respective walls and the other robot's body, making mutual passage impossible.
 
-To formalize this into an algorithm, we define the narrow aisle spatial mutex at the corridor level, not the inspection region level. We identify three narrow shared corridors on the factory floor plan, all aligned parallel to the north-south axis and distributed along the east-west spatial span. Each narrow aisle is shared between two sets of shelves, spanning the positive and negative lateral faces of the adjacent large shelving units, respectively. To pass the shared narrow corridors, the robot must make a claim on the relevant shelf face, which then makes this whole aisle region mutually exclusive. By contrast, the virtual mobile cluster is located at the wide loading dock, where the clearance is sufficient for robot traffic from both sides of the aisle. Hence, the task allocator does not apply the shared corridor mutex to the mobile cluster.
+To formalize this idea into an algorithm, we define the narrow aisle spatial mutex at the corridor level instead of the inspection region level. There are 12 narrow shared corridors in the factory layout; 3 main longitudinal corridors are between the high-rise shelves and 9 narrow ones are between the facing small retail shelves. Every narrow aisle is a shared workspace between 2 parallel storage faces, which requires mutual exclusion to prevent the inter-agent collisions, local costmap inflation, and resulting deadlocks. By contrast, the virtual mobile cluster is placed at the wide loading dock, which allows the robots to pass from both sides of the aisle. As a result, the task allocator does not impose the mutual exclusion of the shared corridor on the mobile robot cluster.
 
-To avoid spatial conflicts in the narrow part of the transit zone, the workspace is divided into three sections along the length of the corridor. The sections are named the western, middle, and eastern segments of narrow aisle areas. Each section is limited by pairs of facing shelf units whose approach from both sides would lead to local costmap inflation. The first segment, designated as the western corridor, is situated between the positive longitudinal face of the first large shelving unit and the negative longitudinal face of the adjacent fifth large shelving unit. The second segment, designated as the middle corridor, is located between the positive longitudinal face of the fifth large shelving unit and the negative longitudinal face of the fourth large shelving unit. The third segment, designated as the eastern corridor, is located between the positive longitudinal face of the fourth large shelving unit and the negative longitudinal face of the third large shelving unit. The coordination module restricts navigation with these pairs of shelf faces, ensuring exclusive access to the entire length of the narrow aisle corridor, avoiding deadlocks by means of distributed mutual exclusion \cite{ricart1981optimal}.
+To avoid the spatial deadlocks of the narrow transit zones, the workspace is divided into local regions of mutual exclusion for the robotic fleet. The high-rise storage area is divided into 3 primary longitudinal corridors along the north-south axis. The western corridor is located between the positive x-face of the first big shelf (\texttt{shelf\_big\_0\_xplus}) and the negative x-face of the fifth big shelf (\texttt{shelf\_big\_4\_xminus}). The middle longitudinal corridor is between the positive x-face of the fifth big shelf (\texttt{shelf\_big\_4\_xplus}) and the negative x-face of the fourth big shelf (\texttt{shelf\_big\_3\_xminus}). Finally, the eastern longitudinal corridor is between the positive x-face of the fourth big shelf (\texttt{shelf\_big\_3\_xplus}) and the negative x-face of the third big shelf (\texttt{shelf\_big\_2\_xminus}).
+
+Further, the same principle is applied to the small shelf storage area to define 9 narrow aisles between the facing y-faces of the small shelves, distributed across three distinct structural columns. On the western column of small shelves, the top narrow aisle is between \texttt{shelf\_2\_yminus} and \texttt{shelf\_1\_yplus}, the middle narrow aisle is between \texttt{shelf\_1\_yminus} and \texttt{\seqsplit{shelf\_0\_yplus}}, and the bottom narrow aisle is between \texttt{shelf\_0\_yminus} and \texttt{\seqsplit{shelf\_yplus}}. Similarly, on the eastern column of small shelves, the top narrow aisle is between \texttt{shelf\_3\_yminus} and \texttt{shelf\_4\_yplus}, the middle narrow aisle is between \texttt{shelf\_4\_yminus} and \texttt{shelf\_6\_yplus}, and the bottom narrow aisle is between \texttt{shelf\_6\_yminus} and \texttt{\seqsplit{shelf\_5\_yplus}}. Finally, on the southeast corner column of small shelves, the top narrow aisle is located between \texttt{shelf\_10\_yminus} and \texttt{shelf\_9\_yplus}, the middle narrow aisle is between \texttt{shelf\_9\_yminus} and \texttt{shelf\_8\_yplus}, and the bottom narrow aisle is established between \texttt{shelf\_8\_yminus} and \texttt{shelf\_7\_yplus}. The coordination module mutually excludes all narrow aisles for the robotic fleet. This way, the local mutual exclusion primitive of the P2P navigation is applied to the entire length of every narrow aisle, which successfully avoids the spatial deadlocks of the narrow transit zones \cite{ricart1981optimal}. The global physical constants, shelving dimensions, and narrow aisle mutual exclusion mappings governing this spatial partition are compiled in Appendix~\ref{app:code_config} (Listing~\ref{lst:config_blueprints_core}).
 
 \subsection{Peer-to-Peer Claims Protocol and Lease Mechanics}
 
@@ -75,29 +91,41 @@ with the indicator function being equal to unity when the lease of the particula
 \begin{equation}
 t_{\text{expire}, j} = t_{\text{stamp}, j} + \tau_{\text{lease}} \label{eq:lease_expiration_time}
 \end{equation}
-where the default value during normal operations is set to $\tau_{\text{lease}} = 6.0\,\text{s}$. Note that to sustain the lease while waiting for tracking and inspection procedures, an active claiming agent needs to renew the lease by sending updated lease information to the fleet's communication infrastructure. The parameter governing the time interval between the consecutive renewal messages is set to $T_{\text{renew}} = 1.5\,\text{s}$. The deadline time is moved to a new value specified by Equation \ref{eq:lease_expiration_time}, thus preventing the corridor segment from being released while the claiming agent sustains the lease. If the lease renewal procedure is not followed, the indicator function drops to zero, and the product formulation given by Equation \ref{eq:spatial_availability_check} evaluates to unity, automatically restoring the segment's availability for the fleet's other agents.
+where the default value during normal operations is set to $\tau_{\text{lease}} = 6.0\,\text{s}$. Note that to sustain the lease while waiting for tracking and inspection procedures, an active claiming agent needs to renew the lease by sending updated lease information to the fleet's communication infrastructure. The parameter governing the time interval between the consecutive renewal messages is set to $T_{\text{renew}} = 1.5\,\text{s}$. The deadline time is moved to a new value specified by Equation \ref{eq:lease_expiration_time}, thus preventing the corridor segment from being released while the claiming agent sustains the lease \cite{ghamdi2025opinion}. If the lease renewal procedure is not followed, the indicator function drops to zero, and the product formulation given by Equation \ref{eq:spatial_availability_check} evaluates to unity, automatically restoring the segment's availability for the fleet's other agents.
 
 \subsection{Asymmetric Race-Condition Resolution}
 
 To resolve simultaneous claim packets in the asynchronous distributed architecture, we define the tie-breaking priority relation:
 \begin{equation}
+\thinmuskip=1mu\medmuskip=2mu\thickmuskip=2mu
 (t_{\text{stamp}, i}, \; \text{ID}_i) \prec (t_{\text{stamp}, j}, \; \text{ID}_j) \iff \left( t_{\text{stamp}, i} < t_{\text{stamp}, j} \right) \lor \left( (t_{\text{stamp}, i} = t_{\text{stamp}, j}) \land (\text{ID}_i < \text{ID}_j) \right) \label{eq:asymmetric_precedence}
 \end{equation}
-which imposes a linear ordering of the packets by their arrival time and agent-specific identifier. Practically however, it is impossible to enforce such ordering on the edge due to serialization overhead on the network. The physical peer-to-peer stack uses a stateless local runtime coordination mechanism, which leverages LCFS (Last-Come-First-Served) lease preemption. By doing so, incoming lease updates can preemptively overwrite local lock registries, obviating the need to maintain a queue at the edge that would serialize updates on the planar manifold, conserving critical edge compute cycles and reducing coordination induced latency.
+which imposes a linear ordering of the packets by their arrival time and agent-specific identifier. Practically however, it is impossible to enforce such ordering on the edge due to serialization overhead on the network. The physical peer-to-peer stack uses a stateless local runtime coordination mechanism, which leverages LCFS (Last-Come-First-Served) lease preemption. By doing so, incoming lease updates can preemptively overwrite local lock registries~\cite{coskun2021deadlock}, which ultimately impacts the timestamp measurements recorded in \texttt{anomaly\_latency.csv}, obviating the need to maintain a queue at the edge that would serialize updates on the planar manifold, conserving critical edge compute cycles and reducing coordination induced latency(see Figure~\ref{fig:corridor_lease_sequence}.). The complete Python operationalization of this lease-renewal cycle, LCFS overwrite arbitration, and blacklist propagation logic is implemented within the \texttt{ClaimManager} class, as compiled in Appendix~\ref{app:code_claim_manager} (Listing~\ref{lst:claim_manager_core}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_5_2_corridor_lease_sequence.pdf}
+\caption{Peer-to-peer corridor claim and lease-renewal protocol between two agents, illustrating the asynchronous claim broadcast (Eq.~\ref{eq:spatial_availability_check}), the LCFS tie-breaking rule (Eq.~\ref{eq:asymmetric_precedence}), and the $T_{\text{renew}}=1.5\,\text{s}$ lease-renewal cycle.}
+\label{fig:corridor_lease_sequence}
+\end{figure}
 
 \section{Runtime SDF Parsing and 2D Coordinate Transformation Geometry}
 
 \subsection{Dynamic Simulation Environment Parsing vs. Static Layouts}
 
-The utilization of pre-set, static waypoint lists severely limits the versatility of multi-agent warehousing fleets. In a scenario of reconfiguration or re-positioning of the stored items, the list becomes essentially useless and has to be updated by the system administrators, which is a very time-consuming and error-prone task. Subsequently, wrong destination coordinates may lead to mission abortion due to local planning errors or collisions. The previously described limitations are addressed by the current solution, which implements a dynamic simulation environment parsing framework. Upon launch, the coordinate resolution engine instantiates the world parsing node, which parses the simulation world layout representation directly for the purposes of dynamic coordinate extraction. Using hierarchical document parsing techniques, the spatial parser node tracks down the first-level include tags, inside of which the necessary model frames are located. For each discovered frame, the spatial parser node extracts the raw, six-degrees-of-freedom pose vector relative to the global origin:
+The utilization of pre-set, static waypoint lists severely limits the versatility of multi-agent warehousing fleets. In a scenario of reconfiguration or re-positioning of the stored items, the list becomes essentially useless and has to be updated by the system administrators, which is a very time-consuming and error-prone task. Subsequently, wrong destination coordinates may lead to mission abortion due to local planning errors or collisions. The previously described limitations are addressed by the current solution, which implements a dynamic simulation environment parsing framework. Upon launch, the coordinate resolution engine instantiates the world parsing node, which parses the simulation world layout representation directly for the purposes of dynamic coordinate extraction\cite{mattila2022using}. Using hierarchical document parsing techniques, the spatial parser node tracks down the first-level include tags, inside of which the necessary model frames are located. For each discovered frame, the spatial parser node extracts the raw, six-degrees-of-freedom pose vector relative to the global origin:
 
-\[ \mathbf{P}_{\text{raw}} = \begin{bmatrix} x_{\text{raw}} & y_{\text{raw}} & z_{\text{raw}} & \phi_{\text{roll}} & \theta_{\text{pitch}} & \psi_{\text{yaw}} \end{bmatrix}^T \]
+\begin{equation}
+\mathbf{P}_{\text{raw}} = \begin{bmatrix} x_{\text{raw}} & y_{\text{raw}} & z_{\text{raw}} & \phi_{\text{roll}} & \theta_{\text{pitch}} & \psi_{\text{yaw}} \end{bmatrix}^T
+\label{eq:raw_pose_vector}
+\end{equation}
 
 Given the structure of the raw simulation world layout file, the target model names are parsed according to the small shelf/big shelf/pallet pattern for dynamic coordinate replacement. Given that the multi-agent system operates purely within a planar SE(2) manifold within a plane defined by the $XY$ axes, the spatial parser node discards the vertical position vector component $z_{\text{raw}}$ as well as the roll and pitch angles of the frame, effectively obtaining the reduced $\text{SE}(2)$ representation of the target position:
 
-\[ 
-\mathbf{q}_{\text{projected}} = \begin{bmatrix} x_{\text{raw}} & y_{\text{raw}} & \psi_{\text{yaw}} \end{bmatrix}^T \in \text{SE}(2) 
-\]
+\begin{equation}
+\mathbf{q}_{\text{projected}} = \begin{bmatrix} x_{\text{raw}} & y_{\text{raw}} & \psi_{\text{yaw}} \end{bmatrix}^T \in \text{SE}(2)
+\label{eq:projected_pose_vector}
+\end{equation}
 
 For the purposes of the current project, this reduced, planar representation of spatial coordinates is sufficient to implement a non-holonomic kinematic chain, thereby obtaining a dynamic path planning framework not limited by the static waypoint list.
 
@@ -127,23 +155,31 @@ which enables the computation of the compound homogeneous transform representing
 \begin{equation}
 \mathbf{T}_{\mathcal{G}}^{\mathcal{R}} = \mathbf{T}_{\mathcal{G}}^{\mathcal{L}} \mathbf{T}_{\mathcal{L}}^{\mathcal{R}} \label{eq:homogeneous_matrix_chain}
 \end{equation}
-By formulating the homogeneous transformations for local offset, rotation, and robot-specific transformation in this manner, the spatial parser node guarantees kinematic compatibility of the subsequent approach pose and camera transform calculations relative to the non-holonomic constraints of the agents.
+By formulating the homogeneous transformations for local offset, rotation, and robot-specific transformation in this manner, the spatial parser node guarantees kinematic compatibility of the subsequent approach pose and camera transform calculations relative to the non-holonomic constraints of the agents. The software routines executing these planar matrix operations, including the CAD origin offset transformations and local-to-global frame mappings, are defined in the SDF geometry engine detailed in Appendix~\ref{app:code_sdf_parser} (Listing~\ref{lst:sdf_transform_core}).
 
 \subsection{Parametric Approach Pose Generation and Steel-Column Structural Bypass}
 
 To allow the vehicle's visual perception system to capture the necessary visual data, the robot must approach the target shelf at a sufficient distance $D_{\text{approach}} = 1.20\,\text{m}$ normal to its longitudinal inspection face. For small shelf instances (horizontal sweeping), this offset is determined by the model's depth parameter, yielding $D_{\text{offset}} = \frac{\text{depth}}{2} + D_{\text{approach}} = \frac{0.6}{2} + 1.2 = 1.50\,\text{m}$. The inspection waypoints are distributed along the longitudinal axis, with local division steps defined as $\Delta x_{\text{local, i}} = -1.35 + (i \cdot 0.9)$ for $i \in \{0, 1, 2, 3\}$. The global inspection target coordinate vector $\mathbf{q}_{\text{small}, i} = [gx_{s, i}, gy_{s, i}]^T$ is resolved by applying the rigid-body transformation:
 
-\[ 
-\begin{bmatrix} gx_{s, i} \\ gy_{s, i} \end{bmatrix} = \begin{bmatrix} cx \\ cy \end{bmatrix} + \begin{bmatrix} \cos(\psi_{\text{yaw}}) & -\sin(\psi_{\text{yaw}}) \\ \sin(\psi_{\text{yaw}}) & \cos(\psi_{\text{yaw}}) \end{bmatrix} \begin{bmatrix} \Delta x_{\text{local, i}} \\ \delta_s \cdot D_{\text{offset}} \end{bmatrix} 
-\]
+\begin{equation}
+\begin{aligned}
+\begin{bmatrix} gx_{s, i} \\ gy_{s, i} \end{bmatrix} &= \begin{bmatrix} cx \\ cy \end{bmatrix} + \begin{bmatrix} \cos(\psi_{\text{yaw}}) & -\sin(\psi_{\text{yaw}}) \\ \sin(\psi_{\text{yaw}}) & \cos(\psi_{\text{yaw}}) \end{bmatrix} \\
+&\quad \begin{bmatrix} \Delta x_{\text{local, i}} \\ \delta_s \cdot D_{\text{offset}} \end{bmatrix}
+\end{aligned}
+\label{eq:small_shelf_approach_pose}
+\end{equation}
 
 where $\delta_s \in \{-1, 1\}$ represents the directional approach sign designating either the positive or negative lateral side of the shelving unit.
 
 Conversely, the big shelf type (vertical sweeping) utilizes a lateral axis projection where the approach offset is determined by the model's width parameter, giving $D_{\text{offset}} = \frac{\text{width}}{2} + D_{\text{approach}} = \frac{2.1}{2} + 1.2 = 2.25\,\text{m}$. The longitudinal section dividers are placed at $\Delta y_{\text{local, i}} = 6.75 - (i \cdot 4.5)$ relative to the model's origin. The global approach pose vector $\mathbf{q}_{\text{big}, i} = [gx_{b, i}, gy_{b, i}]^T$ for each inspection section is computed via:
 
-\[ 
-\begin{bmatrix} gx_{b, i} \\ gy_{b, i} \end{bmatrix} = \begin{bmatrix} cx \\ cy \end{bmatrix} + \begin{bmatrix} \cos(\psi_{\text{yaw}}) & -\sin(\psi_{\text{yaw}}) \\ \sin(\psi_{\text{yaw}}) & \cos(\psi_{\text{yaw}}) \end{bmatrix} \begin{bmatrix} \delta_s \cdot D_{\text{offset}} \\ \Delta y_{\text{local, i}} \end{bmatrix} 
-\]
+\begin{equation}
+\begin{aligned}
+\begin{bmatrix} gx_{b, i} \\ gy_{b, i} \end{bmatrix} &= \begin{bmatrix} cx \\ cy \end{bmatrix} + \begin{bmatrix} \cos(\psi_{\text{yaw}}) & -\sin(\psi_{\text{yaw}}) \\ \sin(\psi_{\text{yaw}}) & \cos(\psi_{\text{yaw}}) \end{bmatrix} \\
+&\quad \begin{bmatrix} \delta_s \cdot D_{\text{offset}} \\ \Delta y_{\text{local, i}} \end{bmatrix}
+\end{aligned}
+\label{eq:big_shelf_approach_pose}
+\end{equation}
 
 By mathematically separating these sweeping geometries, the coordinate transformation engine guarantees precise, collision-free waypoint generation that respects the non-holonomic kinematics of the fleet.
 
@@ -161,7 +197,14 @@ Although most of the inventory units allowed the symmetric approach to the inspe
 \begin{equation}
 1.81\,\text{m} \label{eq:standard_pallet_offset}
 \end{equation}
-from the positive side. Indeed, such a displacement would require the robot to finalize its approach to the inspection section within the inflated collision area of the warehouse's wall. To ensure a collision-free approach to the inventory unit while maintaining the robot's viewpoint normal to the inspection section, the coordinate estimator utilized a modified inspection approach. In particular, while the robot maintained the standard approach offset of $1.81\,\text{m}$ from the negative side, the positive-side approach was redirected with an orthogonal standing offset of: 1.60 m. To maintain strict alignment with the physical configuration space of the fleet, this displacement is calculated as a sum of the half pallet width of 0.40 m (derived from the full model width of 0.80 m defined in the configuration specs) and the nominal approach clearance of 1.20 m, yielding exactly the required 1.60 m clearance. As a result, the approach waypoint provided an unobstructed inspection vector $(x_{\text{approach}}, y_{\text{approach}})$ with an orthogonal viewpoint for the visual inventory check.
+from the positive side. Indeed, such a displacement would require the robot to finalize its approach to the inspection section within the inflated collision area of the warehouse's wall. To ensure a collision-free approach to the inventory unit while maintaining the robot's viewpoint normal to the inspection section, the coordinate estimator utilized a modified inspection approach. In particular, while the robot maintained the standard approach offset of $1.81\,\text{m}$ from the negative side, the positive-side approach was redirected with an orthogonal standing offset of: 1.60 m. To maintain strict alignment with the physical configuration space of the fleet, this displacement is calculated as a sum of the half pallet width of 0.40 m (derived from the full model width of 0.80 m defined in the configuration specs) and the nominal approach clearance of 1.20 m, yielding exactly the required 1.60 m clearance. As a result, the approach waypoint provided an unobstructed inspection vector $(x_{\text{approach}}, y_{\text{approach}})$ with an orthogonal viewpoint for the visual inventory check.(Figure~\ref{fig:sdf_waypoint_pipeline} summarizes this transformation chain.) The exact algorithmic implementation of this structural bypass rule, along with the parametric section partitioning for retail and industrial shelving units, is provided in Appendix~\ref{app:code_sdf_parser} (Listing~\ref{lst:sdf_shelving_core}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.55\textwidth]{fig_5_3_sdf_waypoint_pipeline.pdf}
+\caption{Runtime pipeline from SDF world-file parsing to final global approach waypoints, including the SE(2) projection (Eq.~\ref{eq:projected_pose_vector}), homogeneous offset correction (Eq.~\ref{eq:homogeneous_offset_projection}), and the steel-column boundary correction (Eq.~\ref{eq:column_shifted_pos}).}
+\label{fig:sdf_waypoint_pipeline}
+\end{figure}
 
 \subsection{Dynamic Mobile Clustering Formulations}
 
@@ -192,12 +235,18 @@ where $\delta_s \in \{-1, 1\}$ becomes a directional sign coefficient depending 
 
 Calculating the sectional approach waypoints in a parametric manner can cause severe motion planning issues near the physical boundaries of the simulation domain. For example, the concrete walls on the eastern ($X \ge 10.0\,\text{m}$) and northern ($Y \ge 15.0\,\text{m}$) edges of the environment restrict the robot's movements, forcing it to perform complex rotational movements when completing the last sweep section in order to retreat from proximity to the walls.
 
-The local planner resolves such issues by utilizing an orientation-driven physics-informed sweeping rule, which adds no computational overhead to the global planning stage. For example, if a target shelf is located near the eastern wall and satisfies the spatial boundary condition ($\bar{x}_{\text{model}} > 10.0\,\text{m}$), the scanning order is reversed depending on which face of the target the robot is approaching from. If the target is being approached from the north, the sweep will follow a west-facing pattern \cite{macenski2020marathon}:
-\[ D \rightarrow C \rightarrow B \rightarrow A \]
+The local planner resolves such issues by utilizing an orientation-driven physics-informed sweeping rule, which adds no computational overhead to the global planning stage. For example, if a target shelf is located near the eastern wall and satisfies the spatial boundary condition ($\bar{x}_{\text{model}} > 10.0\,\text{m}$), the scanning order is reversed depending on which face of the target the robot is approaching from. If the target is being approached from the north, the sweep will follow a west-facing pattern \cite{lafmejani2021nonlinear, chandra2025deadlock}:
+\begin{equation}
+D \rightarrow C \rightarrow B \rightarrow A
+\end{equation}
 while approaching the southern side of the same shelving unit will produce an east-facing scanning pattern:
-\[ A \rightarrow B \rightarrow C \rightarrow D \]
+\begin{equation}
+A \rightarrow B \rightarrow C \rightarrow D
+\end{equation}
 A similar scanning pattern is applied to shelves along the northern boundary satisfying the northern boundary constraint ($\bar{y}_{\text{model}} > 15.0\,\text{m}$):
-\[ D \rightarrow C \rightarrow B \rightarrow A \quad (\text{Southward sweep}) \]
+\begin{equation}
+D \rightarrow C \rightarrow B \rightarrow A \quad (\text{Southward sweep})
+\end{equation}
 
 The target sequence is reversed before being fed into the navigation framework to allow the robot to avoid the most constrained areas of the environment first. By prioritizing these most constrained shelves, the next set of navigation waypoints are gradually positioned closer to central, unconstrained locations. This orientation-driven sweeping heuristic is designed to mitigate motion oscillations and global planning failures in highly constrained dead-end areas, the closed-loop performance and quantitative benefits of which are experimentally evaluated and benchmarked in Section 8.3.
 
@@ -225,9 +274,9 @@ where $\mathbf{u} = [\dot{\theta}_R, \dot{\theta}_L]^T$. The above mapping allow
 
 \subsection{Multi-Layer Costmap Hierarchies and Global Planning}
 
-Autonomous navigation in dense, warehouse settings is well-suited to a decoupling strategy between global path-planning and local obstacle avoidance, achieved by maintaining a hierarchy of costmap layers \cite{macenski2020marathon}. A global planner and local controller run in parallel, with the former computing a trajectory in the map frame to a user-defined approach pose using a relatively large inflation radius $r_{\text{global\_inflation}} = 0.55\,\text{m}$ and low decay cost scaling to motivate centerline preference in broad, open regions. In particular, the global planner is invoked at the time of a target approach request, and selects a shortest-path heuristic grid-based search before engaging the local tracking loop.
+Autonomous navigation in dense, warehouse settings is well-suited to a decoupling strategy between global path-planning and local obstacle avoidance, achieved by maintaining a hierarchy of costmap layers \cite{macenski2023survey}. A global planner and local controller run in parallel, with the former computing a trajectory in the map frame to a user-defined approach pose using a relatively large inflation radius $r_{\text{global\_inflation}} = 0.55\,\text{m}$ and low decay cost scaling to motivate centerline preference in broad, open regions. In particular, the global planner is invoked at the time of a target approach request, and selects a shortest-path heuristic grid-based search before engaging the local tracking loop.
 
-By contrast, the approach to dynamic and static shelves for inspection requires the robot to enter at close ranges, making global planner centerline preference incompatible with the required maneuvering. This necessitates an aggressive inflation threshold in the local costmap frame to avoid obstacles while maneuvering in proximity to shelves. The local costmap layer is centered in the robot frame with an inflation radius of $r_{\text{local\_inflation}} = 0.28\,\text{m}$, which is $1\,\text{cm}$ greater than the robot's bounding radius of $r_{\text{robot}} = 0.27\,\text{m}$: a minimally-safe, paper-thin margin representing a $1\,\text{cm}$ clearance. This creates undesirable tracking difficulties for the local planner, resulting in frequent violations of the local costmap constraints, with the non-holonomic chassis experiencing frequent large-scale collision warnings and control loop oscillations.
+By contrast, the approach to dynamic and static shelves for inspection requires the robot to enter at close ranges, making global planner centerline preference incompatible with the required maneuvering. This necessitates an aggressive inflation threshold in the local costmap frame to avoid obstacles while maneuvering in proximity to shelves. The local costmap layer is centered in the robot frame with an inflation radius of $r_{\text{local\_inflation}} = 0.28\,\text{m}$, which is $1\,\text{cm}$ greater than the robot's bounding radius of $r_{\text{robot}} = 0.27\,\text{m}$: a minimally-safe, paper-thin margin representing a $1\,\text{cm}$ clearance. This creates undesirable tracking difficulties for the local planner, resulting in frequent violations of the local costmap constraints \cite{mlinarcek2026costmap}, with the non-holonomic chassis experiencing frequent large-scale collision warnings and control loop oscillations.
 
 \subsection{Adaptive Lookahead Dynamics and Yaw Regulation in Regulated Pure Pursuit}
 
@@ -246,7 +295,7 @@ v_{\text{scaled\_curvature}} = \max\left(v_{\text{min\_regulated}}, \; v_{\text{
 
 where $v_{\text{min\_regulated}} = 0.15\,\text{m/s}$ represents the regulated scaling velocity floor and \\ $r_{\text{min\_radius}} = 0.75\,\text{m}$ defines the minimum curvature radius threshold below which velocity scaling activates. When the instantaneous radius of curvature $r_{\text{curr}} = 1/\kappa$ falls below this threshold, the linear velocity is scaled down to mitigate wheel slip and prevent unrepresentative velocity estimations in differential drive odometry. Additionally, the scaling dynamics incorporate a curvature regulation gain constant $K_{\text{reg}} = 2.5$ to govern the rate of deceleration under non-linear constraints.
 
-To balance path-tracking stability and task completion, the tracking controller maintains two distinct velocity floors. The curvature and local costmap regulation floor \small{($v_{\text{min\_regulated}}$)} is constrained to $0.15\,\text{m/s}$ to ensure safe cornering. Conversely, the absolute minimum translational approach floor ($v_{\text{min\_approach}}$) is set to $0.03\,\text{m/s}$. This lower threshold allows the chassis to execute slow, precise docking adjustments near shelving units during the terminal waypoint alignment phase without triggering false-positive stall behaviors in the local planner.
+To balance path-tracking stability and task completion, the tracking controller maintains two distinct velocity floors. The curvature and local costmap regulation floor {\small ($v_{\text{min\_regulated}}$)} is constrained to $0.15\,\text{m/s}$ to ensure safe cornering. Conversely, the absolute minimum translational approach floor ($v_{\text{min\_approach}}$) is set to $0.03\,\text{m/s}$. This lower threshold allows the chassis to execute slow, precise docking adjustments near shelving units during the terminal waypoint alignment phase without triggering false-positive stall behaviors in the local planner.
 
 In order to avoid collisions with objects along the course due to potential lateral drift, the forward velocity is additionally scaled down according to local costmap information:
 \begin{equation}
@@ -261,7 +310,7 @@ To prevent wheel odometry from overwhelming the state estimator with unreasonabl
 \boldsymbol{\Sigma}_{\text{calibrated}} = \text{diag}\left(4\cdot10^{-4},\; 4\cdot10^{-4},\; 4\cdot10^{-4},\; 1\cdot10^{-4},\; 1\cdot10^{-4},\; 1\cdot10^{-2}\right) \label{eq:calibrated_covariance_matrix}
 \end{equation}
 
-In order to have a physical correspondence, the diagonal elements of the calibrated covariance matrix were associated with the six-dimensional state vector $\mathbf{x}_{\text{state}} = [x, \; y, \; z, \; \phi, \; \theta, \; \psi]^T \in \mathbb{R}^6$. The first three diagonal elements, each scaled to $4\cdot10^{-4}\,\text{m}^2$, define the translational variances along the three coordinate axes. The fourth and fifth diagonal elements were each set to $1\cdot10^{-4}\,\text{rad}^2$ and define the out-of-plane rotational variances of the roll and pitch states. The motivation for minimizing the out-of-plane elements was to prevent large floor discontinuities from artificially biasing the flat plane state. The sixth diagonal element was set to $1\cdot10^{-2}\,\text{rad}^2$ and defined the planar yaw heading variance that was temporarily inflated to allow wheel slip during hard turns without inducing filter divergence.
+In order to have a physical correspondence, the diagonal elements of the calibrated covariance matrix were associated with the six-dimensional state vector $\mathbf{x}_{\text{state}} = [x,\allowbreak \; y,\allowbreak \; z,\allowbreak \; \phi,\allowbreak \; \theta,\allowbreak \; \psi]^T \in \mathbb{R}^6$. The first three diagonal elements, each scaled to $4\cdot10^{-4}\,\text{m}^2$, define the translational variances along the three coordinate axes~\cite{brossard2022associating}. The fourth and fifth diagonal elements were each set to $1\cdot10^{-4}\,\text{rad}^2$ and define the out-of-plane rotational variances of the roll and pitch states. The motivation for minimizing the out-of-plane elements was to prevent large floor discontinuities from artificially biasing the flat plane state. The sixth diagonal element was set to $1\cdot10^{-2}\,\text{rad}^2$ and defined the planar yaw heading variance that was temporarily inflated to allow wheel slip during hard turns without inducing filter divergence.
 
 The calibrated diagonal covariance matrix $\boldsymbol{\Sigma}_{\text{calibrated}}$ defined in Equation \ref{eq:calibrated_covariance_matrix} assigns tight, conservative covariance values of $10^{-4}\,\text{rad}^2$ to the roll and pitch states. Since the multi-agent system operates strictly within a flat, planar $SE(2)$ manifold, keeping these out-of-plane rotational variances minimized is critical to prevent transient wheel-ground contact slips or floor seams from introducing artificial roll/pitch state drift into the real-time EKF localization server.
 
@@ -272,8 +321,10 @@ The calibrated diagonal covariance matrix $\boldsymbol{\Sigma}_{\text{calibrated
 Executing convolutional networks or vision transformers requires substantial resources for real-time performance, which is incompatible with the power budget of a mobile robot. More specifically, a deep vision model implemented on the central processing unit (CPU) of the robot described in Section 5.1 will rapidly deplete the battery. Furthermore, the execution on the CPU may cause substantial delays for time-critical procedures like path tracking, motion control, and global localization estimators. Our system avoids this unnecessary overhead by designing a light-weight handcrafted feature extraction pipeline.
 
 First, the system processes 1920 by 1080 color frames captured by the forward-looking camera. Each frame is down-sampled and converted to a single-channel gray-scale image according to the following luminance formula:
-\[ I_{\text{gray}}(x,y) = 0.299 \cdot R(x,y) + 0.587 \cdot G(x,y) + 0.114 \cdot B(x,y) \]
-This preprocessing reduces the input dimensionality while eliminating most of the high-frequency components of the original image. Next, the system extracts micro-texture and macro-structural features using two separate feature encoding pipelines.
+\begin{equation}
+I_{\text{gray}}(x,y) = 0.299 \cdot R(x,y) + 0.587 \cdot G(x,y) + 0.114 \cdot B(x,y)
+\end{equation}
+This preprocessing reduces the input dimensionality while eliminating most of the high-frequency components of the original image. Next, the system extracts micro-texture and macro-structural features using two separate feature encoding pipelines~\cite{liu2023tire}.
 
 \subsection{Spatial Rotation-Invariant Uniform Local Binary Patterns (LBP)}
 
@@ -306,7 +357,7 @@ Finally, adding one bin for the non-uniform patterns, the total number of bins f
 \end{equation}
 For the value of $P=8$, the 8-bit local binary patterns are divided into exactly 10 bins under rotation-invariant grouping. 
 
-In texture analysis formulations, the term "uniform" can sometimes denote \footnotesize{non-rotation-invariant} uniform patterns, yielding $P(P-1) + 3 = 59$ bins. However, the algorithmic implementation utilized in this design inherently incorporates circular bit-shift normalization. This operation projects all rotationally equivalent uniform patterns onto a single representative bin. Hence, the resulting feature space is mapped to the mathematically proven $P + 2 = 10$ dimensionality. This projection guarantees that the theoretical combinatoric proof aligns with the discrete histogram binning $bins = \{0, 1, \dots, P+2\}$ used to generate the final feature vector.
+In texture analysis formulations, the term "uniform" can sometimes denote {\footnotesize non-rotation-invariant} uniform patterns, yielding $P(P-1) + 3 = 59$ bins. However, the algorithmic implementation utilized in this design inherently incorporates circular bit-shift normalization. This operation projects all rotationally equivalent uniform patterns onto a single representative bin. Hence, the resulting feature space is mapped to the mathematically proven $P + 2 = 10$ dimensionality. This projection guarantees that the theoretical combinatoric proof aligns with the discrete histogram binning $bins = \{0, 1, \dots, P+2\}$ used to generate the final feature vector.
 
 
 \subsection{Histograms of Oriented Gradients (HOG) Structural Edge Analysis}
@@ -336,23 +387,31 @@ which concludes the dimensional analysis for the structural HOG features. To ach
 
 \subsection{Feature Fusion and PCA Dimensionality Reduction for Edge Detection}
 
-To utilize these descriptors in an edge-deployed anomaly classifier, micro and macro representations can be joined together to form a fusion feature using the process of concatenation of two vectors as shown below:
+To utilize these descriptors in an edge-deployed anomaly classifier, micro and macro representations can be joined together to form a fusion feature using the process of concatenation of two vectors \cite{liu2023tire} as shown below:
 
-\[ \mathbf{x}_{\text{fused}} = \begin{bmatrix} \mathbf{f}_{\text{LBP}}^T & \mathbf{f}_{\text{HOG}}^T \end{bmatrix}^T \in \mathbb{R}^{d_{\text{fused}}} \]
+\begin{equation}
+\mathbf{x}_{\text{fused}} = \begin{bmatrix} \mathbf{f}_{\text{LBP}}^T & \mathbf{f}_{\text{HOG}}^T \end{bmatrix}^T \in \mathbb{R}^{d_{\text{fused}}}
+\end{equation}
 
 where $\mathbf{f}_{\text{LBP}} \in \mathbb{R}^{160}$ is the spatial Local Binary Pattern histogram, $\mathbf{f}_{\text{HOG}} \in \mathbb{R}^{1764}$ is the normalized gradient vector in $\text{L2-Hys}$ norm, and $d_{\text{fused}} = d_{\text{LBP}} + d_{\text{HOG}} = 1924$.
 
 First, this combined feature vector is normalized according to the standardization algorithm using pre-fitted statistics:
 
-\[ \mathbf{x}_{\text{scaled}, j} = \frac{\mathbf{x}_{\text{fused}, j} - \mu_j}{s_j + \epsilon} \]
+\begin{equation}
+\mathbf{x}_{\text{scaled}, j} = \frac{\mathbf{x}_{\text{fused}, j} - \mu_j}{s_j + \epsilon}
+\end{equation}
 
 where $\epsilon = 10^{-8}$ for numerical stability. Next, the system learns a linear transformation matrix according to the Principal Component Analysis (PCA) algorithm, which decreases the feature vector dimensionality, but retains the information. The linear transformation matrix $V^T \in \mathbb{R}^{1924 \times 125}$ is formed by the $k = 125$ eigenvectors associated with the largest eigenvalues of the empirical covariance matrix $\mathbf{\Sigma} \in \mathbb{R}^{1924 \times 1924}$, estimated based on the training data:
 
-\[ \mathbf{\Sigma} = \frac{1}{M-1} \sum_{i=1}^{M} \left( \mathbf{x}_{\text{scaled}}^{(i)} \right) \left( \mathbf{x}_{\text{scaled}}^{(i)} \right)^T \]
+\begin{equation}
+\mathbf{\Sigma} = \frac{1}{M-1} \sum_{i=1}^{M} \left( \mathbf{x}_{\text{scaled}}^{(i)} \right) \left( \mathbf{x}_{\text{scaled}}^{(i)} \right)^T
+\end{equation}
 
 Specifically, the $k = 125$ orthogonal vectors retain exactly 95\% of the empirical variance. The algorithm applies the linear transformation of the normalized feature vector onto the reduced eigenspace using the formula:
 
-\[ \mathbf{x}_{\text{pca}} = \mathbf{x}_{\text{scaled}} \cdot V^T \]
+\begin{equation}
+\mathbf{x}_{\text{pca}} = \mathbf{x}_{\text{scaled}} \cdot V^T
+\end{equation}
 
 Thus, the output of the PCA algorithm becomes the compressed representation of $d = 125$ dimensions. Dimensionality reduction enables the system to exclude uninformative features and multicollinearity while having a compact inference footprint. In particular, the feature vector compression rate amounts to 93.50\%. As a consequence, the system is able to continuously observe the image stream in the real-time mode with a high control loop frequency without encountering computational constraints imposed by the robot's CPU compute budget.
 
@@ -394,7 +453,7 @@ where the noise standard deviation is dynamically adjusted according to:
 \begin{equation} 
 \sigma_{\text{noise}} \sim U(0.0, 5.0) \label{eq:noise_sigma} 
 \end{equation}
-and the resulting intensity values are clipped to the 0-255 range. This final transformation is critical in endowing the vision module with the ability to deal with extreme lighting conditions, and thus it is applied right before the LBP descriptor is extracted from the image \cite{mei2005case}.
+and the resulting intensity values are clipped to the 0-255 range. This final transformation is critical in endowing the vision module with the ability to deal with extreme lighting conditions, and thus it is applied right before the LBP descriptor is extracted from the image \cite{ojala2002multiresolution}.
 
 \subsection{Computational Complexity and Latency Analysis}
 
@@ -416,7 +475,7 @@ Thanks to the low-resolution input ($128 \times 128$), a small number of neighbo
 
 \subsection{Linear Support Vector Machine Classification}
 
-The cardboard anomaly classification task on the edge is particularly challenging due to the need to reach a high-confidence decision at the fastest possible time. To this end, the reduced feature vector representation is scored using a soft-margin Linear Support Vector Machine. Instead of directly optimizing the primal problem, which for the case of high-dimensional input bounds can scale poorly, the optimal separating hyperplane is resolved in the dual formulation as:
+The cardboard anomaly classification task on the edge is particularly challenging due to the need to reach a high-confidence decision at the fastest possible time. To this end, the reduced feature vector representation is scored using a soft-margin Linear Support Vector Machine~\cite{cortes1995support}. Instead of directly optimizing the primal problem, which for the case of high-dimensional input bounds can scale poorly, the optimal separating hyperplane is resolved in the dual formulation as:
 \begin{equation}
 \max_{\boldsymbol{\alpha}} \sum_{i=1}^{M} \alpha_i - \frac{1}{2} \sum_{i=1}^{M} \sum_{j=1}^{M} \alpha_i \alpha_j y_i y_j \langle \mathbf{x}_i, \mathbf{x}_j \rangle \label{eq:svm_lagrangian_dual}
 \end{equation}
@@ -432,7 +491,7 @@ with the bias term $b$. If the decision value $f(F_{\text{pca}})$ is positive, t
 
 \subsection{Mathematical Back-Projection to Raw Featurespace}
 
-While being effective in automated cardboard packaging inspection, such an approach lacks the ability to offer visual explanations of the decisions to the human supervisor, thus potentially undermining the overall cyber-physical system's trustworthiness. The common model-agnostic post-hoc explanation techniques, such as input perturbation, require an unacceptable amount of computational resources for the embedded robotic vision application. To resolve the conundrum, the interpretability is baked into the model by leveraging the linearity of the reduced-space classifier's decision boundary.
+While being effective in automated cardboard packaging inspection, such an approach lacks the ability to offer visual explanations of the decisions to the human supervisor, thus potentially undermining the overall cyber-physical system's trustworthiness~\cite{samek2017explainable}. The common model-agnostic post-hoc explanation techniques, such as input perturbation, require an unacceptable amount of computational resources for the embedded robotic vision application. To resolve the conundrum, the interpretability is baked into the model by leveraging the linearity of the reduced-space classifier's decision boundary.
 
 Due to the SVM decision function's linearity in the input features reduced by PCA, the optimal separating hyperplane's weight vector can be back-projected to the original high-dimensional feature space using the same projection matrix utilized for the forward transformation. Specifically, the raw feature-space equivalent of the reduced-space weight vector $\mathbf{w}_{\text{pca}}$ is calculated as:
 \begin{equation}
@@ -464,7 +523,14 @@ in a linear blending operation that produces the final XAI visualization:
 \begin{equation}
 I_{\text{XAI}}(x,y) = (1 - \alpha_{\text{blend}}) \cdot I_{\text{gray, BGR}}(x,y) + \alpha_{\text{blend}} \cdot I_{\text{JetMap}}(x,y) \label{eq:alpha_blending}
 \end{equation}
-where the blending coefficient alpha is set to $\alpha_{\text{blend}} = 0.35$. Notably, the full feature-space attribution pipeline runs on the robotic edge vision system in only 1.2 ms, thus enabling real-time attention-aware robotic box inspection.
+where the blending coefficient alpha is set to $\alpha_{\text{blend}} = 0.35$. Notably, the full feature-space attribution pipeline runs on the robotic edge vision system in only 1.2 ms, thus enabling real-time attention-aware robotic box inspection.(The complete pipeline, from raw frame to XAI overlay, is depicted in Figure~\ref{fig:perception_xai_pipeline}.) The mathematical back-projection pipeline converting SVM hyperplanes into $4 \times 4$ spatial grid attributions and colormap overlays is programmatically realized in Appendix~\ref{app:code_xai} (Listing~\ref{lst:xai_backproject_core}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig_5_6_perception_xai_pipeline.pdf}
+\caption{End-to-end perception and classification pipeline: LBP/HOG feature fusion (Eq.~\ref{eq:hog_total_dim}), PCA projection, linear SVM decision (Eq.~\ref{eq:svm_decision_function}), and closed-form spatial back-projection into the final XAI attention overlay (Eq.~\ref{eq:alpha_blending}).}
+\label{fig:perception_xai_pipeline}
+\end{figure}
 
 \subsection{Steady-State Foundation for Resilient Fleet Coordination}
 

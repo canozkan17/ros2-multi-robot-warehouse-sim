@@ -1,11 +1,27 @@
 \thispagestyle{empty}
-\vspace*{0.2cm}
+\vspace*{1.0cm}
 
 \begin{center}
     \textbf{Zusammenfassung}
 \end{center}
 
-\vspace*{0.2cm}
+\vspace*{0.5cm}
 
-\noindent 
-Da die meisten Leuten an der TU deutsch als Muttersprache haben, empfiehlt es sich, das Abstract zusätzlich auch in deutsch zu schreiben. Man kann es auch nur auf deutsch schreiben und anschließend einem Englisch-Muttersprachler zur Übersetzung geben.
+\noindent
+Physische Inventarprüfungen in der Lagerlogistik erfordern stets einen Kompromiss zwischen extrem kostenintensiven, manuellen Vollzählungen und risikobehafteten, spärlichen Stichprobenintervallen – ein Zielkonflikt, der sich mit zunehmender Regaldichte und -höhe weiter verschärft. Autonome mobile Roboter bieten hierfür eine vielversprechende Alternative, sind jedoch in der Regel um eine zentrale Leitinstanz für Routenplanung und Kollisionsvermeidung strukturiert, was einen kritischen Single Point of Failure darstellt. In realistischen Industrieumgebungen mit Hochregallagern aus Stahl erweisen sich Funkverbindungen häufig als unzuverlässig, was zu Kommunikationsabbrüchen mit einzelnen Robotern führen kann. Dezentrale Peer-to-Peer-Systeme umgehen diese Schwachstelle systembedingt, verzichten dabei jedoch auf das globale Zustandswissen, das gewöhnlich für die Verteilung von Transportaufträgen, die Korridor-Priorisierung und die Fehlersuche erforderlich ist.
+
+\vspace*{0.3cm}
+\noindent
+Die vorherrschende Literatur zur Aufgabenallokation in Multi-Roboter-Systemen stützt sich überwiegend auf marktbasierte Auktionsverfahren oder ganzzahlige Optimierung, um die Interaktionen zwischen Agenten und Ressourcen zu modellieren. Beide Ansätze weisen jedoch aufgrund der kombinationellen Komplexität des Zuordnungsproblems ab wenigen Dutzend Robotern ein mangelhaftes Skalierungsverhalten auf. Analog dazu wird die Analyse der Missionsfortführung bei Lokalisierungs- und Kinematikfehlern durch das Fehlen von Studien erschwert, die Wechselwirkungen zwischen zeitgleichen Planungsepisoden berücksichtigen. Untersuchungen, die versuchen, die Kosten der Dezentralisierung zu quantifizieren, bieten kaum detaillierte Erkenntnisse über die entstehenden Einbußen beim Durchsatz und evaluieren diese Verluste selten in real implementierten Systemen, sondern meist in idealisierten Simulationen. Die vorliegende Arbeit untersucht, inwieweit eine minimale Flotte homogener Roboter ohne jegliche zentrale Planungs- oder Überwachungsinfrastruktur einen nahezu optimalen Durchsatz aufrechterhalten und gleichzeitig den Ausfall eines einzelnen Agenten kompensieren kann.
+
+\vspace*{0.3cm}
+\noindent
+Drei TurtleBot3-Waffle-Roboter wurden unter ROS~2 Jazzy und Gazebo Harmonic simuliert, um 142 Inspektionspunkte zu überprüfen, die auf 22 Regal- und Paletteneinheiten verteilt sind. Die Zielkoordinaten wurden hierbei zur Laufzeit dynamisch aus der Umgebungslage ausgelesen anstatt fest kodiert zu werden. Die Aufgabenzuweisung folgte einer deterministischen Abrasterung entlang der Haupthimmelsrichtungen mit Priorisierungsregeln für dieselbe Regal- und Elementseite. Zur Vermeidung von Engpässen in schmalen Regalgängen ohne zentrale Instanz wurde ein pachtbasierter räumlicher Mutex (gegenseitiger Ausschluss) implementiert, der über eine direkte Peer-to-Peer-Kommunikation zwischen den Agenten in den zwölf gemeinsamen Gängen koordiniert wird. Die Fehlertoleranz verteilt sich auf fünf Ebenen: eine kovarianzgesteuerte Lokalisierungsrücksetzung, eine fortschrittsbasierte Blockadeerkennung mit pythagoräischem Zielversetzungsmanöver, eine batterieabhängige Arbeitslastreallokation, ein linearer SVM-Anomalieklassifikator mit XGBoost-Fallback für die räumliche Zuordnung sowie ein Ensemble ergänzender Verfahren. In achtzehn Testläufen wurden die Einflüsse von Flottengröße, Fehlereinspeisungszeitpunkt und Wahrnehmungslatenz isoliert untersucht, wobei die Systemtopologie konstant gehalten wurde.
+
+\vspace*{0.3cm}
+\noindent
+Eine Konfiguration mit zwei Robotern erzielte 99.4\% der theoretischen linearen Beschleunigung durch Parallelisierung. Dies zeigt, dass der Aufwand für den räumlichen Mutex vernachlässigbar ist, solange die Zielbereiche überschneidungsarm verteilt sind. Die Erweiterung auf drei Roboter verringerte den Parallelisierungsgrad auf 90.3\%. Dieser Rückgang ist jedoch nicht auf einen strukturellen Mangel des Mutex-Protokolls zurückzuführen, sondern auf drei simultane paarweise Überschneidungen infolge der statischen Zonenpartitionierung. Die Rekonfiguration nach einem Ausfall erfolgte in dreizehn von fünfzehn Testfällen in weniger als sechs Millisekunden – weit unterhalb des fünfsekündigen Heartbeat-Timeouts für stumme Ausfälle. Die Abdeckungsrate der Inspektionspunkte lag auch bei Injizierung von Fehlern durchgehend über 98\%, wobei verbleibende Abweichungen auf die grobe Gang-Granularität der Blacklist-Einträge und nicht auf die Zuweisungslogik zurückzuführen waren. Die Wahrnehmungspipeline verarbeitete 7278 Scans mit einer durchschnittlichen Latenz von 10.17 Millisekunden, was deutlich innerhalb des mechanischen Abtastfensters von 1.5--4.0 Sekunden liegt. Insgesamt belegen die Ergebnisse, dass ein meisterloses Drei-Roboter-System das Durchsatzniveau eines zentralen Planers nahezu erreichen und einzelne Agentenausfälle bei minimalem Durchsatzverlust kompensieren kann.
+
+\vspace*{0.3cm}
+\noindent
+Diese Arbeit liefert eine dezentrale Koordinations- und Wiederherstellungsarchitektur, die Aufgabenallokation, räumlichen gegenseitigen Ausschluss und mehrstufige Fehlertoleranz in einem voll funktionsfähigen Drei-Roboter-System vereint. Darüber hinaus bietet sie eine empirisch fundierte Quantifizierung der Zielkonflikte zwischen der Robustheit dezentraler Systeme und dem Koordinationsdurchsatz in der mobilen Lagerinspektion.

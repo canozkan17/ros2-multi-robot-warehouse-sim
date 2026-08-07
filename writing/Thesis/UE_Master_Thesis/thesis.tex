@@ -1,34 +1,67 @@
 \documentclass[bibtotoc,liststotoc,BCOR=5mm,DIV=12]{scrbook}
 
-% use this declaration to set specific page margins
-\usepackage[a4paper , lmargin = {2cm} , rmargin = {4.0cm} , tmargin = {2.5cm} , bmargin = {3cm} ]{geometry}
-\usepackage[a4paper]{geometry}
+% Page margins setup (Geometry single call)
+\usepackage[a4paper, lmargin=2cm, rmargin=4.0cm, tmargin=2.5cm, bmargin=3cm]{geometry}
 
 \usepackage[ngerman, english]{babel}
-\usepackage{bibgerm}       		% german references
-\usepackage[T1]{fontenc} % german characters
-\usepackage{graphicx} 				% it's recommended to use PDF images but you can use JPG or PNG as well
-\usepackage{url}           		% format URLs
-\usepackage{hyperref} 				% create hyperlinks
-\usepackage{listings, color}	% for source code
-\usepackage{subfig}						% two figures next to each other (example: figure 3a), figure 3b)
-\usepackage{scrlayer-scrpage}					% header and footer line
+\usepackage{bibgerm}            % German references
+\usepackage[T1]{fontenc}        % German characters
+\usepackage{graphicx}           % PNG, JPG, PDF support
+\usepackage{url}                % Format URLs
+\usepackage{listings, color}    % Source code formatting
+\usepackage{subfig}             % Subfigures
+\usepackage{scrlayer-scrpage}   % Header and footer line
 \usepackage{todonotes}
-\usepackage{lipsum}     % Generate automatic filler text.
-
+\usepackage{lipsum}             % Filler text
 
 \usepackage{soul}
 \usepackage[acronym,toc]{glossaries}
 \usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsmath}            % Math tools
+\usepackage{seqsplit}
+\usepackage{tabularx}           % Auto-wrapping tables
+\usepackage{booktabs}           % Professional table lines
+\usepackage{array}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X} % Sola hizalı esnek X sütunu
+
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+
+\lstdefinestyle{thesiscode}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    frame=single
+}
+
+\lstset{style=thesiscode}
 
 \usepackage{tikz}
 \usepackage{pgfplots}
-\usepackage{amssymb} % \mathbb{\mathbb{P}} sembolü için gereklidir
-\usepackage{booktabs} % \toprule, \midrule, \bottomrule komutları için şarttır
-\usepackage{amsmath}  % \text{} komutunun doğru çalışması için
-\pgfplotsset{compat=1.18} % Derleme uyarılarını önler
+\pgfplotsset{compat=1.18}        % PGFPlots compatibility
 
-% header and footer line - no header & footer line on pages where a new chapter starts
+\usepackage{hyperref}           % Hyperref SHOULD be loaded near the end of preambles
+
+% Header and footer configuration
 \pagestyle{scrheadings}
 \ohead{Fault-Tolerant Decentralized Multi-Agent Coordination}
 \ihead{Can Özkan}
@@ -36,10 +69,10 @@
 \ifoot{Master Thesis, UE, 2026}
 \author{Can Özkan}
 
-% set path where images are stored
+% Path where images are stored
 \graphicspath{{./img/}}
 
-\input{./misc/hyphenation} 					% use this file to set explicit hyphenations (doesn't seem to work correctly)
+\input{./misc/hyphenation}
 
 \makeglossaries
 
@@ -54,7 +87,6 @@
     \thispagestyle{empty}
     \cleardoublepage
 
-
     \include{./misc/abstract}
     \thispagestyle{empty}
     \cleardoublepage
@@ -62,11 +94,9 @@
     \include{./misc/abstract_de}
     \thispagestyle{empty}
 
-
     \tableofcontents
     \thispagestyle{empty}
 
-    % \todo[inline]{talk to your supervisor if this is needed}
     \listoffigures
     \thispagestyle{empty}
 
@@ -74,8 +104,7 @@
     \thispagestyle{empty}
 
 % --------------------------------------------------------------
-
-\mainmatter % comment single chapters for faster compilation
+\mainmatter
 
     \input{./chapters/chapter1}
     \input{./chapters/chapter2}
@@ -88,14 +117,12 @@
     \input{./chapters/chapter9}
 
 % ---------------------------------------------------------------
-\backmatter % no page numbering from here
+\backmatter
     \input{./misc/acronyms}
     \input{./misc/glossary}
-    % \clearpage
+    
     \printglossary[title={Acronyms}, type=\acronymtype, toctitle=List of Acronyms]
     \printglossary[title=Special Terms, toctitle=List of terms]
-
-		% if you want to provide a glossary with explanations of important terms put it in here
 
     \bibliographystyle{geralpha}
     \bibliography{./bib/manual}

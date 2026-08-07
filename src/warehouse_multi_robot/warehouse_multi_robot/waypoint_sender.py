@@ -557,7 +557,7 @@ class WaypointSenderNode(Node):
             if px is not None and py is not None:
                 self.peer_poses[peer_name] = (float(px), float(py))
             
-            if status == "ACTIVE" and peer_name != self.robot_name:
+            if status in ("ACTIVE", "IDLE") and peer_name != self.robot_name:
                 self.health_monitor.register_heartbeat(peer_name, int(self.get_clock().now().nanoseconds))
             
             # Instant failure trigger: If status is FAILED, trigger reallocation immediately
@@ -1324,6 +1324,25 @@ class WaypointSenderNode(Node):
                 self.deferred_side_keys.discard(side_key)
                 # Broadcast the blacklist action to the fleet!
                 self.claim_mgr.publish_blacklist(side_key)
+                
+                # Dynamically reduce our waypoint limit by the number of sections on this blocked side
+                # to prevent infinite standby loops when tasks become physically unreachable.
+                item_name = self.active_target_dict["item_name"]
+                item = self.task_coord.items_registry.get(item_name, {})
+                side_spec = item.get("sides", {}).get(side_key.split("_")[-1], {})
+                labels = side_spec.get("section_labels_template") or side_spec.get("section_labels", ["A"])
+
+                uncompleted_assigned_sections = 0
+                for label in labels:
+                    section_key = f"{side_key}_{label}"
+                    if section_key not in self.task_coord.global_completed_waypoints:
+                        uncompleted_assigned_sections += 1
+                
+                self.spec["waypoint_limit"] -= uncompleted_assigned_sections
+                self.get_logger().warn(
+                    f"[{self.robot_name}] Waypoint limit adjusted accurately. Reduced by {uncompleted_assigned_sections} "
+                    f"instead of full side sections ({len(labels)}). New limit: {self.spec['waypoint_limit']}"
+                )
             else:
                 self.deferred_side_keys.add(side_key)
                 

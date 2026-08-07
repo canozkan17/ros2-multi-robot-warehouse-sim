@@ -1,81 +1,382 @@
-\addchap{Annex}
+\appendix
 
-\begin{appendix}
+\chapter{Codebase Implementations and Algorithmic Blueprints}\label{cha:appendix_code}
 
-\lstset{language=,caption=Sourcecode Listing,captionpos=b,
-label=yahoowidgetkon,showstringspaces=false,
-basicstyle={\fontfamily{pcr}\selectfont\footnotesize}}
-\begin{lstlisting}
-<?xml version="1.0" encoding="UTF-8"?>
-<widget>
-	 <debug>off</debug>
-	 <window name="myWindow" title="Hello Widget" visible="true">
-		 <height>120</height>
-		 <width>320</width>
-		 <image src="Resources/orangebg.png">
-			<name>orangebg</name>
-			<hOffset>0</hOffset>
-			<vOffset>0</vOffset>
-		</image>
-		 <text>
-			 <name>myText</name>
-			 <data>Hello Widget</data>
-			 <color>#000000</color>
-			 <size>20</size>
-			 <vOffset>50</vOffset>
-			 <hOffset>120</hOffset>
-		 </text>
-	</window>
-</widget>
+Code snippets implementing ideas described in Chapters~\ref{cha:chapter5}, \ref{cha:chapter6}, and \ref{cha:chapter7}, excluding standard boilerplate code and logging routines.
+
+\section{Dynamic SDF World Parsing and Coordinate Geometry}\label{app:code_sdf_parser}
+
+The code implementing the 2D rotation matrix transformations and CAD origin offset compensation is given below in Listing~\ref{lst:sdf_transform_core}. It reproduces the calculations described in Section~5.3.2.
+
+\begin{lstlisting}[language=Python, caption={Coordinate transformation matrix and geometric center offset resolution.}, label={lst:sdf_transform_core}]
+def apply_transformation_matrix(
+    raw_x: float, 
+    raw_y: float, 
+    yaw: float, 
+    local_dx: float, 
+    local_dy: float
+) -> Tuple[float, float]:
+    """
+    Applies a 2D rotation matrix to map local offsets into global world coordinates.
+    Formula:
+        gx = raw_x + local_dx * cos(yaw) - local_dy * sin(yaw)
+        gy = raw_y + local_dx * sin(yaw) + local_dy * cos(yaw)
+    """
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    global_x = raw_x + (local_dx * cos_yaw) - (local_dy * sin_yaw)
+    global_y = raw_y + (local_dx * sin_yaw) + (local_dy * cos_yaw)
+    return round(global_x, 3), round(global_y, 3)
+
+def get_item_geometric_center(
+    item_type: str, 
+    raw_x: float, 
+    raw_y: float, 
+    yaw: float
+) -> Tuple[float, float]:
+    """Calculates the true geometric center of an item by applying its local offset."""
+    if item_type in ("shelf", "shelf_big"):
+        # Shelves have -0.5m offset along local X in Gazebo models
+        local_dx = -0.5
+        local_dy = 0.0
+    else:
+        local_dx = 0.0
+        local_dy = 0.0
+        
+    return apply_transformation_matrix(raw_x, raw_y, yaw, local_dx, local_dy)
 \end{lstlisting}
 
-\newpage
+Also in Section~5.3.2, Listing~\ref{lst:sdf_shelving_core} shows the implementation of the dynamic waypoints generation algorithm for both small-scale retail shelf and steel column bypass.
 
+\begin{lstlisting}[language=Python, caption={Parametric section layout generation and steel-column structural bypass.}, label={lst:sdf_shelving_core}]
+def build_small_shelf_sides(name: str, cx: float, cy: float, yaw: float) -> Dict[str, Any]:
+    """Generates sides and section waypoints for a standard small shelf."""
+    sides = {}
+    labels = ["A", "B", "C", "D"]
+    half_width = SMALL_SHELF_SPECS["width"] / 2.0
+    step = SMALL_SHELF_SPECS["section_step"]
+    offset_dist = (SMALL_SHELF_SPECS["depth"] / 2.0) + APPROACH_DISTANCE_M # 1.5m
+    
+    side_1_pts, side_2_pts = [], []
+    for i in range(len(labels)):
+        local_dx = -half_width + (step / 2.0) + (i * step)
+        side_1_pts.append(apply_transformation_matrix(cx, cy, yaw, local_dx, offset_dist))
+        side_2_pts.append(apply_transformation_matrix(cx, cy, yaw, local_dx, -offset_dist))
+        
+    side_1_y_avg = sum(pt[1] for pt in side_1_pts) / len(side_1_pts)
+    side_2_y_avg = sum(pt[1] for pt in side_2_pts) / len(side_2_pts)
+    
+    yplus_raw, yminus_raw = (side_1_pts, side_2_pts) if side_1_y_avg > side_2_y_avg else (side_2_pts, side_1_pts)
+        
+    for side_name, raw_pts in [("yplus", yplus_raw), ("yminus", yminus_raw)]:
+        raw_pts.sort(key=lambda pt: pt[0]) # Ascending X order
+        section_points_list = [(pt[0], pt[1], labels[idx]) for idx, pt in enumerate(raw_pts)]
+        sides[side_name] = {
+            "side": side_name,
+            "key": f"{name}_{side_name}",
+            "approach_x": section_points_list[0][0],
+            "approach_y": section_points_list[0][1],
+            "sections": SMALL_SHELF_SPECS["sections"],
+            "section_points_template": section_points_list,
+            "section_labels_template": labels,
+        }
+    return sides
 
-\lstset{caption=SIP request and response packet\cite{SIPBook},
-captionpos=b,label=sippacket,showstringspaces=false,
-basicstyle={\fontfamily{pcr}\selectfont\footnotesize}}
-\begin{lstlisting}
-INVITE sip:bob@network.org SIP/2.0
-Via: SIP/2.0/UDP 100.101.102.103:5060;branch=z9hG4bKmp17a
-Max-Forwards: 70
-To: Bob <sip:bob@network.org>
-From: Alice <sip:alice@ims-network.org>;tag=42
-Call-ID: 10@100.101.102.103
-CSeq: 1 INVITE
-Subject: How are you?
-Contact: <sip:xyz@network.org>
-Content-Type: application/sdp
-Content-Length: 159
-v=0
-o=alice 2890844526 2890844526 IN IP4 100.101.102.103
-s=Phone Call
-t=0 0
-c=IN IP4 100.101.102.103
-m=audio 49170 RTP/AVP 0
-a=rtpmap:0 PCMU/8000
-
-SIP/2.0 200 OK
-Via: SIP/2.0/UDP proxy.network.org:5060;branch=z9hG4bK83842.1
-;received=100.101.102.105
-Via: SIP/2.0/UDP 100.101.102.103:5060;branch=z9hG4bKmp17a
-To: Bob <sip:bob@network.org>;tag=314159
-From: Alice <sip:alice@network.org>;tag=42
-Call-ID: 10@100.101.102.103
-CSeq: 1 INVITE
-Contact: <sip:foo@network.org>
-Content-Type: application/sdp
-Content-Length: 159
-v=0
-o=bob 2890844526 2890844526 IN IP4 200.201.202.203
-s=Phone Call
-c=IN IP4 200.201.202.203
-t=0 0
-m=audio 49172 RTP/AVP 0
-a=rtpmap:0 PCMU/8000
+# --- Steel Column Structural Bypass Snippet in parse_sdf() ---
+structural_shifts = [("shelf_big_0", "xplus"), ("shelf_big_4", "xminus")]
+for shelf_name, side_name in structural_shifts:
+    if shelf_name in items and side_name in items[shelf_name]["sides"]:
+        side_spec = items[shelf_name]["sides"][side_name]
+        shifted_points = []
+        for gx, gy, label in side_spec["section_points_template"]:
+            if label == "C":
+                gy = -13.50  # Safely offset Y coordinate to clear steel column at Y = -15.00m
+            shifted_points.append((gx, gy, label))
+        side_spec["section_points_template"] = shifted_points
 \end{lstlisting}
 
+\section{Peer-to-Peer Spatial Mutex and Claim Manager}\label{app:code_claim_manager}
 
-\end{appendix}
+The code of the decentralized spatial mutual exclusion mechanism, including the TTL lease management is implemented in the class \texttt{ClaimManager} from \texttt{waypoint\_sender.py}. Listing~\ref{lst:claim_manager_core} reproduces the relevant snippets for claim processing, LCFS lease overwrite procedure, and blacklist propagation described in Sections~\ref{sec:ch5_claims} and~\ref{sec:ch6_blacklist}.\footnote{Corresponding to Section~5.2.4 and Section~6.5.2 in Chapter~5 and Chapter~6.}
 
-\endinput
+\begin{lstlisting}[language=Python, caption={Peer-to-peer claim manager and lease maintenance engine.}, label={lst:claim_manager_core}]
+class ClaimManager:
+    def __init__(self, node: Node):
+        self.node = node
+        self.active_claims: Dict[str, Dict[str, Any]] = {}
+        self.local_active_claim_key: Optional[str] = None
+        
+        qos_claims = QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE)
+        self.claims_pub = self.node.create_publisher(String, "/side_claims", qos_claims)
+
+    def process_claim_message(self, side_key: str, robot_id: str, action: str, expire_at_ns: int):
+        """Updates internal claims registry based on global claims messages."""
+        if action == "release":
+            self.active_claims.pop(side_key, None)
+            if robot_id == self.node.robot_name:
+                self.local_active_claim_key = None
+        elif action in ("claim", "renew"):
+            self.active_claims[side_key] = {
+                "robot_id": robot_id,
+                "expire_at_ns": expire_at_ns
+            }
+            if robot_id == self.node.robot_name:
+                self.local_active_claim_key = side_key
+        elif action == "blacklist":
+            if robot_id != self.node.robot_name:
+                self.node.permanently_blocked_side_keys.add(side_key)
+                self.node.deferred_side_keys.discard(side_key)
+                self.active_claims.pop(side_key, None)
+
+    def publish_local_claim(self, action_string: str):
+        """Publishes own claims or renewals to the global topic."""
+        if not self.node.active_target_dict:
+            return
+            
+        now_ns = int(self.node.get_clock().now().nanoseconds)
+        expire_at_ns = now_ns + (6 * 1_000_000_000) # 6.0 second lease TTL
+        
+        side_key = self.node.active_target_dict['side_key']
+        payload = {
+            "robot_id": self.node.robot_name,
+            "side_key": side_key,
+            "action": action_string,
+            "timestamp_ns": now_ns,
+            "expire_at_ns": expire_at_ns
+        }
+        
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.claims_pub.publish(msg)
+
+    def release_local_claim(self):
+        """Releases local spatial claim and notifies the peer fleet."""
+        if not self.local_active_claim_key:
+            return
+            
+        now_ns = int(self.node.get_clock().now().nanoseconds)
+        payload = {
+            "robot_id": self.node.robot_name,
+            "side_key": self.local_active_claim_key,
+            "action": "release",
+            "timestamp_ns": now_ns,
+            "expire_at_ns": now_ns
+        }
+        
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.claims_pub.publish(msg)
+        self.active_claims.pop(self.local_active_claim_key, None)
+        self.local_active_claim_key = None
+\end{lstlisting}
+
+\section{Progress-Based Kinematic Stall Watchdog and Escape Engine}\label{app:code_recovery}
+
+The progress-based motion stall detection algorithm and the deterministic open-loop physical escape are implemented in \texttt{recovery.py}. Listing~\ref{lst:recovery_manager_core} below shows the $10\mathrm{Hz}$ tick function which evaluates the progress delta ($\delta_{\text{progress}} = 0.03\mathrm{m}$ over $10.0\mathrm{s}$), initiates an open-loop linear backup ($v_x = -0.12\mathrm{m/s}$, $1.67\mathrm{s}$), and the direction-alternating rotational escape ($\omega_z = \pm 0.35\text{rad/s}$, $0.9\mathrm{s}$). These parameters are determined by the calculations described in Section~6.3.
+
+\begin{lstlisting}[language=Python, caption={Progress-based stall detection watchdog and physical escape engine.}, label={lst:recovery_manager_core}]
+class RecoveryManager:
+    def __init__(self, node: Node, cmd_vel_publisher, nav2_cancel_cb, nav2_retrigger_cb, defer_task_cb):
+        self.node = node
+        self.cmd_vel_pub = cmd_vel_publisher
+        self.cancel_nav2_goal = nav2_cancel_cb
+        self.retrigger_nav2_goal = nav2_retrigger_cb
+        self.defer_active_task = defer_task_cb
+        
+        self.state = RecoveryState.IDLE
+        self.retry_count = 0
+        self.last_movement_timestamp_ns = 0
+        self.maneuver_end_timestamp_ns = 0
+        
+        self.PROGRESS_EPSILON_M = 0.03  # Must move 3cm to reset stall clock
+        self.BACKWARD_SPEED = -0.12
+        self.BACKWARD_DURATION_S = 0.2 / 0.12  # 1.667s duration to cover 0.20m
+        self.ESCAPE_ROTATION_SPEED = 0.35
+        self.ESCAPE_ROTATION_DURATION_S = 0.9
+
+    def tick(self, current_x: float, current_y: float):
+        """Master 10Hz clock tick of the recovery manager."""
+        if self.state == RecoveryState.IDLE:
+            return
+            
+        now_ns = self.node.get_clock().now().nanoseconds
+        
+        if self.state == RecoveryState.MONITORING:
+            elapsed_seconds = (now_ns - self.last_movement_timestamp_ns) / 1e9
+            threshold = STALL_CANDIDATE_TIMEOUT_SEC if self.is_heading_to_candidate else STALL_DIRECT_TIMEOUT_SEC
+            if elapsed_seconds > threshold:
+                self._handle_stall_detection()
+                
+        elif self.state == RecoveryState.BACKING_UP:
+            if now_ns >= self.maneuver_end_timestamp_ns:
+                self._stop_cmd_vel_output()
+                self._start_escape_rotation()
+            else:
+                self._publish_backward_drive()
+                
+        elif self.state == RecoveryState.ROTATING_ESCAPE:
+            if now_ns >= self.maneuver_end_timestamp_ns:
+                self._stop_cmd_vel_output()
+                self._trigger_nav2_replan()
+            else:
+                self._publish_escape_rotation()
+
+    def _start_physical_escape(self):
+        if self.retry_count >= 5:
+            self.state = RecoveryState.EXHAUSTED
+            self.defer_active_task()
+            return
+
+        self.retry_count += 1
+        self.state = RecoveryState.BACKING_UP
+        now_ns = self.node.get_clock().now().nanoseconds
+        self.maneuver_end_timestamp_ns = now_ns + int(self.BACKWARD_DURATION_S * 1e9)
+
+    def _publish_escape_rotation(self):
+        cmd = Twist()
+        # Alternate rotation direction based on attempt number to clear costmap edges
+        rotation_sign = 1.0 if (self.retry_count % 2 == 1) else -1.0
+        cmd.angular.z = rotation_sign * self.ESCAPE_ROTATION_SPEED
+        self.cmd_vel_pub.publish(cmd)
+\end{lstlisting}
+
+\section{Onboard Edge Perception, Analytical Redundancy, and Linear XAI Back-Projection}\label{app:code_xai}
+
+The onboard visual perception module and the linear XAI attribution model are implemented in \texttt{waypoint\_sender.py}. Listing~\ref{lst:xai_backproject_core} shows the reproduction of the closed-form vision back-projection algorithm ($\mathbf{w}_{\text{raw}} = \mathbf{w}_{\text{pca}} \mathbf{V}$), unscaling procedure, $4 \times 4$ spatial grid interpolation, and alpha-blending of the colormap ($\alpha_{\text{blend}} = 0.35$) from Section~5.6.
+
+\begin{lstlisting}[language=Python, caption={Closed-form linear SVM weight back-projection and XAI colormap generation.}, label={lst:xai_backproject_core}]
+def _generate_xai_overlay(self, perturbed_img):
+    """Generates mathematically honest Explainable AI (XAI) overlays based on SVM coefficients."""
+    if len(perturbed_img.shape) == 2:
+        perturbed_color = cv2.cvtColor(perturbed_img, cv2.COLOR_GRAY2BGR)
+    else:
+        perturbed_color = perturbed_img.copy()
+
+    if not self.scaler or not self.pca or not self.svm_active or not hasattr(self.svm_model, "coef_"):
+        return perturbed_color
+
+    try:
+        # 1. Project Linear SVM decision boundary weights back to 1924-dim space (W_raw = W_pca * V^T)
+        pca_weights = self.svm_model.coef_[0]
+        raw_weights = np.dot(pca_weights, self.pca.components_)
+        
+        # 2. Rescale using StandardScaler's array to reverse scaling influence
+        raw_weights_scaled = raw_weights / (self.scaler.scale_ + 1e-8)
+        
+        # 3. Extract the first 160 dimensions (Uniform Spatial LBP features)
+        lbp_weights_magnitude = np.abs(raw_weights_scaled[:160])
+        
+        # 4. Sum 10 bins across each of the 16 blocks to calculate spatial grid importance
+        block_importances = lbp_weights_magnitude.reshape(16, 10).sum(axis=1)
+        grid_importance = block_importances.reshape(4, 4)
+        
+        # 5. Normalize and upscale 4x4 grid to 128x128 via bilinear interpolation
+        grid_min, grid_max = grid_importance.min(), grid_importance.max()
+        grid_norm = ((grid_importance - grid_min) / (grid_max - grid_min + 1e-8) * 255).astype(np.uint8)
+        heatmap = cv2.resize(grid_norm, (128, 128), interpolation=cv2.INTER_LINEAR)
+        
+        # 6. Apply JET Colormap for visual overlay
+        heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+        
+        # 7. Blend 65% original camera view with 35% XAI decision boundary heatmap
+        overlay = cv2.addWeighted(perturbed_color, 0.65, heatmap_color, 0.35, 0)
+        return overlay
+
+    except Exception as e:
+        self.get_logger().error(f"[{self.robot_name}] Failed to generate XAI heatmap: {e}")
+        return perturbed_color
+\end{lstlisting}
+
+\section{Deterministic Launch Orchestration and Readiness Gates}\label{app:code_launch}
+
+The deterministic robot launch procedure requires two types of modifications to the code. First, the blocking readiness gates are defined in \texttt{gate.py}, while the launch process itself is orchestrated in \texttt{multi\_robot\_controlled.launch.py} using \texttt{OnProcessExit} event handlers. The code snippet in Listing~\ref{lst:gate_primitives_core} below reproduces the relevant blocks implementing the temporal constraints from Section~7.2.2.
+
+\begin{lstlisting}[language=Python, caption={Deterministic readiness gate primitives for launch orchestration.}, label={lst:gate_primitives_core}]
+def wait_for_clock(poll_sec: float = 1.0) -> None:
+    """Block until at least one message arrives on /clock."""
+    print('[gate:clock] waiting for /clock...', flush=True)
+    while True:
+        result = _run(['ros2', 'topic', 'echo', '--once', '/clock', '--field', 'clock.sec'], timeout=3.0)
+        if result and result.returncode == 0 and result.stdout.strip():
+            print('[gate:clock] ready - /clock is publishing', flush=True)
+            return
+        time.sleep(poll_sec)
+
+def wait_for_lifecycle(nodes: list, poll_sec: float = 1.0) -> None:
+    """Block until every lifecycle node in `nodes` reports state active."""
+    assert nodes, '[gate:lifecycle] nodes list must not be empty'
+    while True:
+        not_active = []
+        for node in nodes:
+            result = _run(['ros2', 'lifecycle', 'get', node], timeout=4.0)
+            if not result or result.returncode != 0:
+                not_active.append(node)
+                continue
+            out = result.stdout.strip().lower()
+            if not (out.startswith('active') or 'active [3]' in out):
+                not_active.append(node)
+        if not not_active:
+            print('[gate:lifecycle] ready - all nodes active', flush=True)
+            return
+        time.sleep(poll_sec)
+\end{lstlisting}
+
+The next step in deterministic launch orchestration is to define event-driven \texttt{OnProcessExit} handlers for each robot in the system to ensure sequential launch without race-conditions between robots. This is implemented in the \texttt{multi\_robot\_controlled.launch.py} module, and the code snippet is given below in Listing~\ref{lst:launch_chains_core}. It reproduces the code blocks described in Section~7.2.3.
+
+\begin{lstlisting}[language=Python, caption={Sequential per-robot lifecycle daisy-chaining via OnProcessExit event handlers.}, label={lst:launch_chains_core}]
+def _robot_chain(robot, world_name, base_urdf, bridge_yaml, nav2_yaml, map_yaml, default_bt_xml, start_trigger_gate):
+    name = robot['name']
+    x, y = robot['x'], robot['y']
+
+    spawn = ExecuteProcess(
+        cmd=[sys.executable, _SPAWN_PY, '--world-name', world_name, '--robot-name', name,
+             '--sdf-file', robot['sdf'], '--x', x, '--y', y, '--z', '0.01'],
+        name=f'spawn_{name}', output='screen'
+    )
+
+    topics_gate = _gate('topics', topics=[f'/{name}/scan', f'/{name}/odom_filtered', f'/{name}/joint_states', '/tf', '/tf_static'], label=f'gate_topics_{name}')
+    lifecycle_gate = _gate('lifecycle', nodes=[f'/{name}/map_server', f'/{name}/amcl', f'/{name}/planner_server', f'/{name}/controller_server', f'/{name}/behavior_server', f'/{name}/bt_navigator'], label=f'gate_lifecycle_{name}')
+
+    spawn_trigger = RegisterEventHandler(OnProcessExit(target_action=start_trigger_gate, on_exit=[spawn]))
+
+    actions_list = [
+        spawn_trigger,
+        RegisterEventHandler(OnProcessExit(target_action=spawn, on_exit=[bridge, rsp, ekf_node, topics_gate])),
+        RegisterEventHandler(OnProcessExit(target_action=topics_gate, on_exit=[_nav2_group(name, nav2_yaml, map_yaml, default_bt_xml, x, y), lifecycle_gate])),
+        RegisterEventHandler(OnProcessExit(target_action=lifecycle_gate, on_exit=_mission_nodes(name))),
+    ]
+    return actions_list, lifecycle_gate
+\end{lstlisting}
+
+\section{System Configuration Blueprints and Narrow-Aisle Mutex Allocations}\label{app:code_config}
+
+The code snippet below in Listing~\ref{lst:config_blueprints_core} reproduces the implementation of the physical geometry constants, static allocation tables, and narrow-aisle spatial mutexes from \texttt{config.py}.
+
+\begin{lstlisting}[language=Python, caption={Global physical constants and narrow aisle mutual exclusion mappings.}, label={lst:config_blueprints_core}]
+APPROACH_DISTANCE_M = 1.2
+NAVIGATION_FINAL_GOAL_TOLERANCE_M = 0.35
+
+SMALL_SHELF_SPECS = {
+    "width": 3.6, "depth": 0.6, "sections": 4, "section_step": 0.9,
+    "offset_local_x": -0.5, "offset_local_y": 0.0
+}
+
+BIG_SHELF_SPECS = {
+    "width": 2.1, "length": 18.0, "sections": 4, "section_step": 4.5,
+    "offset_local_x": -0.5, "offset_local_y": 0.0
+}
+
+# --- Narrow Aisle Mutual Exclusion Groups (Corridor Mutex) ---
+SHARED_CORRIDORS = {
+    "shelf_big_0_xplus": "corridor_west",
+    "shelf_big_4_xminus": "corridor_west",
+    "shelf_big_4_xplus": "corridor_mid",
+    "shelf_big_3_xminus": "corridor_mid",
+    "shelf_big_3_xplus": "corridor_east",
+    "shelf_big_2_xminus": "corridor_east",
+    "shelf_2_yminus": "corridor_small_west_top",
+    "shelf_1_yplus": "corridor_small_west_top",
+    "shelf_9_yplus": "corridor_small_corner_top",
+    "shelf_10_yminus": "corridor_small_corner_top"
+}
+\end{lstlisting}

@@ -9,15 +9,21 @@ A critical task of any cyber-physical logistics facility is the inventory auditi
 
 The physical warehouse environment used as the basis for this research was designed to resemble a realistic logistics facility. The workspace consists of several structural pillars, dynamic loading docks, and multiple rows of storage shelves and pallets, which were placed to host inventory targets. In particular, to assign the robots global navigation waypoints, the warehouse workspace was represented as a bounded 2D space:
 
-\[ \mathcal{W} = [X_{\min}, X_{\max}] \times [Y_{\min}, Y_{\max}] \subset \mathbb{R}^2 \]
+\begin{equation}
+\mathcal{W} = [X_{\min}, X_{\max}] \times [Y_{\min}, Y_{\max}] \subset \mathbb{R}^2
+\end{equation}
 
 where $\mathcal{O}$ is the set of obstacles defining the free workspace for robot motions, where elements $\mathcal{O}_i$ are members of the power set $\mathcal{P}(\mathcal{W})$:
 
-\[ \mathcal{O} = \{ \mathcal{O}_1, \mathcal{O}_2, \dots, \mathcal{O}_M \} \subset \mathcal{P}(\mathcal{W}) \]
+\begin{equation}
+\mathcal{O} = \{ \mathcal{O}_1, \mathcal{O}_2, \dots, \mathcal{O}_M \} \subset \mathcal{P}(\mathcal{W})
+\end{equation}
 
 The resulting free workspace $\mathcal{W}_{\text{free}}$ available for navigation is defined as:
 
-\[ \mathcal{W}_{\text{free}} = \mathcal{W} \setminus \bigcup_{i=1}^{M} \mathcal{O}_i \]
+\begin{equation}
+\mathcal{W}_{\text{free}} = \mathcal{W} \setminus \bigcup_{i=1}^{M} \mathcal{O}_i
+\end{equation}
 
 \subsection{Physical Workspace Description}
 
@@ -27,23 +33,29 @@ The workspace consists of twenty-two large, small shelves, and pallets arranged 
 
 Each of the storage unit types contains several inventory cells located at various heights along the length of the facility:
 
-\[ \mathcal{P} = \{ p_1, p_2, \dots, p_{142} \} \]
+\begin{equation}
+\mathcal{P} = \{ p_1, p_2, \dots, p_{142} \}
+\end{equation}
 
 Each target location $p_i$ therefore represents a discrete inspection point in the free space, defined as:
 
-\[ p_i = (x_i, y_i, z_i, \theta_i) \in \mathcal{W}_{\text{free}} \times \mathbb{R} \times S^1 \]
+\begin{equation}
+p_i = (x_i, y_i, z_i, \theta_i) \in \mathcal{W}_{\text{free}} \times \mathbb{R} \times S^1
+\end{equation}
 
 where the first two coordinates define the position, while the last one encodes the yaw angle orthogonal to the surface of the cardboard box, allowing the agent to capture high-resolution imagery of the target surface. The coordinates of the target locations were hardcoded into the world geometry file \texttt{tugbot\_warehouse\_clean.sdf}.
 
 \subsubsection{Parsing of the World Geometry}
 
-To generalize the multi-agent planning procedure to arbitrary workspace layouts without hardcoding the target locations, the planning algorithm parses the world geometry \texttt{sdf\_parser.py}. In particular, upon initializing the simulation world from the XML description \texttt{tugbot\_warehouse\_clean.sdf}, the parser extracts the geometric centroids of the storage units and calculates approximate approach waypoints for the robotic agents. This procedure therefore allows the planner to adapt to various warehouse layouts, as demonstrated in [citation].
+To generalize the multi-agent planning procedure to arbitrary workspace layouts without hardcoding the target locations, the planning algorithm parses the world geometry \texttt{sdf\_parser.py}. In particular, upon initializing the simulation world from the XML description \texttt{tugbot\_warehouse\_clean.sdf}, the parser extracts the geometric centroids of the storage units and calculates approximate approach waypoints for the robotic agents. This procedure therefore allows the planner to adapt to various warehouse layouts.
 
 \subsection{Aisle and Corridor Constraints}
 
 The storage shelves are organized in parallel rows, forming navigation corridors:
 
-\[ \mathcal{C} = \{ c_1, c_2, \dots, c_K \} \]
+\begin{equation}
+\mathcal{C} = \{ c_1, c_2, \dots, c_K \}
+\end{equation}
 
 which contain the majority of the workspace obstacles.
 
@@ -51,16 +63,24 @@ which contain the majority of the workspace obstacles.
 
 The width of the corridor $W_{\text{aisle}}$ is insufficient to allow the autonomous agents to pass in both directions:
 
-\[ W_{\text{aisle}} < 2 \cdot D_{\text{safe}} + \epsilon \]
+\begin{equation}
+W_{\text{aisle}} < 2 \cdot D_{\text{safe}} + \epsilon
+\end{equation}
 
 where $D_{\text{safe}}$ encodes the clearance distance required around the robot to prevent collisions with other agents. In particular, if two agents attempt to move from opposite ends of the narrow aisle, their localized costmaps will inflate the obstacle boundaries, preventing mutual passage:
 
-\[ D_{\text{safe}} + D_{\text{robot}} > W_{\text{aisle}} \]
+\begin{equation}
+D_{\text{safe}} + D_{\text{robot}} > W_{\text{aisle}}
+\end{equation}
 
-rendering the narrow aisle a global coordination bottleneck for the multi-robot system [citation]. 
+rendering the narrow aisle a global coordination bottleneck for the multi-robot system \cite{matos2025efficient}. 
 
-%\begin{figure}[h]\centering \includegraphics[width=0.7\textwidth]{} \caption{Geometric configuration of a narrow aisle bottleneck, showing $W_{\text{aisle}}$ relative to $2 \cdot D_{\text{safe}}$.} \label{fig:corridor_bottleneck} \end{figure} 
-
+\begin{figure}[h]
+    \centering 
+    \includegraphics[width=0.7\textwidth]{img/fig_4_1_corridor_bottleneck.pdf} 
+    \caption{Geometric configuration of a narrow aisle bottleneck, showing $W_{\text{aisle}}$ relative to $2 \cdot D_{\text{safe}}$.} 
+    \label{fig:fig_4_1_corridor_bottleneck} 
+\end{figure}
 [figur 1] shows this effect for a generic narrow aisle navigation corridor.
 
 \subsubsection{Interference With Building Pillars}
@@ -78,23 +98,29 @@ The total target set, $ |\mathcal{P}| = 142 $, is developed by enumerating the n
 
 The robotic fleet consists of three homogeneous differential drive agents:
 
-\[ \mathcal{A} = \{ a_1, a_2, a_3 \} \]
+\begin{equation}
+\mathcal{A} = \{ a_1, a_2, a_3 \}
+\end{equation}
 
 which operate in a fully decentralized manner. At any given moment $t$, the state of each active agent $a_i \in \mathcal{A}$ is defined by its pose in the free space $x_i(t) \in \mathcal{W}_{\text{free}}$. Collision avoidance between active physical frames is mathematically governed by the following clearance constraint:
 
-\[ \text{For all } a_i, a_j \in \mathcal{A}, a_i \neq a_j: \quad \|x_i(t) - x_j(t)\| \geq 2 \cdot r_{\text{bounding}} \]
+\begin{equation}
+\text{For all } a_i, a_j \in \mathcal{A}, a_i \neq a_j: \quad \|x_i(t) - x_j(t)\| \geq 2 \cdot r_{\text{bounding}}
+\end{equation}
 
 where $r_{\text{bounding}}$ represents the conservative bounding radius circumscribing the rectangular physical footprint of the chassis.
 
 \subsubsection{Target Set Coverage Task Formulation}
 
-Let $\mathcal{T}_i(t) \subset \mathcal{P}$ denote the set of targets assigned to the robotic agent $a_i$ at time $t$. In particular, the multi-agent task allocation procedure should satisfy the following coverage constraints:
+Let $\mathcal{T}_i(t) \subset \mathcal{P}$ denote the set of targets assigned to the robotic agent $a_i$ at time $t$. In particular, the multi-agent task allocation procedure should satisfy the following coverage constraints~\cite{xu2026energy}:
 
-\[ \forall t: \bigcup_{i=1}^{3} \mathcal{T}_i(t) = \mathcal{P} \quad \text{and} \quad \mathcal{T}_i(t) \cap \mathcal{T}_j(t) = \emptyset \quad \forall i \neq j \]
+\begin{equation}
+\forall t: \bigcup_{i=1}^{3} \mathcal{T}_i(t) = \mathcal{P} \quad \text{and} \quad \mathcal{T}_i(t) \cap \mathcal{T}_j(t) = \emptyset \quad \forall i \neq j
+\end{equation}
 
 The mission is considered complete when all targets have been audited. In particular, the global mission completion time $T_{\text{audit}}$ should be minimized across all valid task allocations, representing the time when the last agent finishes its task queue and returns to its docking pose.
 
-The main challenge of the decentralized multi-agent coverage task is the absence of the master planner, which would coordinate the agents and resolve the spatial coordination conflicts described in Section~4.1.2. In particular, the agents should negotiate the access to the narrow aisle using the ad-hoc communication described in \texttt{waypoint\_sender.py}, resolving the spatial inter-agent assignment conflicts while following the constraints imposed by the inspection waypoints. Furthermore, in the case of a single agent failure, the surviving agents should be able to reconfigure the task allocation table to reassign the inspection targets of the failed robot [citation].
+The main challenge of the decentralized multi-agent coverage task is the absence of the master planner, which would coordinate the agents and resolve the spatial coordination conflicts described in Section~4.1.2. In particular, the agents should negotiate the access to the narrow aisle using the ad-hoc communication described in \texttt{waypoint\_sender.py}, resolving the spatial inter-agent assignment conflicts while following the constraints imposed by the inspection waypoints. Furthermore, in the case of a single agent failure, the surviving agents should be able to reconfigure the task allocation table to reassign the inspection targets of the failed robot \cite{gong2024resilient}.
 
 \subsubsection{Mobile Clustering for Dynamic Inventory Asset Grouping}
 
@@ -102,7 +128,9 @@ Dimensional configuration cost incurred by multi-agent task allocation is avoide
 
 The coordinates of this object are represented through the geometric mean of the centroids of the corresponding pallets:
 
-\[ c_{\text{cluster}} = \left( \frac{1}{M} \sum_{k=1}^{M} x_k, \quad \frac{1}{M} \sum_{k=1}^{M} y_k \right) \]
+\begin{equation}
+c_{\text{cluster}} = \left( \frac{1}{M} \sum_{k=1}^{M} x_k, \quad \frac{1}{M} \sum_{k=1}^{M} y_k \right)
+\end{equation}
 
 where $M = 3$ denotes the number of the mobile pallets in the subset. Using the generation of unified orthogonal poses of the cluster segments along the global $X$-axis and a deterministic North-to-South sweeping order (by descending $Y$-coordinates), the multi-agent task allocator avoids local planning issues and redundant entries of the sweep corridors.
 
@@ -110,7 +138,7 @@ where $M = 3$ denotes the number of the mobile pallets in the subset. Using the 
 
 \section{Homogeneous Fleet Description and Agent Capabilities}
 
-To reduce the complexity of multi-agent coordination while maximizing the reliability and flexibility of the robotic fleet, this research uses a homogeneous fleet of three differential drive robots [citation]. In particular, the failure of any single robot can be compensated by the other two, while the uniformity of the dynamic and sensory properties allows the agents to perform any inspection tasks interchangeably without additional calibration.
+To reduce the complexity of multi-agent coordination while maximizing the reliability and flexibility of the robotic fleet, this research uses a homogeneous fleet of three differential drive robots. In particular, the failure of any single robot can be compensated by the other two, while the uniformity of the dynamic and sensory properties allows the agents to perform any inspection tasks interchangeably without additional calibration.
 
 The robotic agents were modeled after the TurtleBot3 Waffle differential drive mobile robot.
 
@@ -122,7 +150,9 @@ The differential drive robots have standard 2D TurtleBot3 Waffle specifications,
 
 The lateral distance between the left and right wheels is configured as:
 
-\[ w_{\text{track}} = 0.287\text{ m} \]
+\begin{equation}
+w_{\text{track}} = 0.287\text{ m}
+\end{equation}
 
 The distance between the robot's left and right wheels defines its turning capabilities: a larger value of $w_{\text{track}}$ increases the minimal turning radius of the robot.
 
@@ -130,7 +160,9 @@ The distance between the robot's left and right wheels defines its turning capab
 
 The radius of the drive wheels is:
 
-\[ r_{\text{wheel}} = 0.033\text{ m} \]
+\begin{equation}
+r_{\text{wheel}} = 0.033\text{ m}
+\end{equation}
 
 The wheel radius determines the ratio between the angular velocity of the robot's motors and its linear speed.
 
@@ -138,9 +170,13 @@ The wheel radius determines the ratio between the angular velocity of the robot'
 
 To avoid mechanical damage, the execution engine limits the linear velocity and acceleration of the robots:
 
-\[ v_{\text{max}} = 0.8\text{ m/s} \]
+\begin{equation}
+v_{\text{max}} = 0.8\text{ m/s}
+\end{equation}
 
-\[ a_{\text{max}} = 1.0\text{ m/s}^2 \]
+\begin{equation}
+a_{\text{max}} = 1.0\text{ m/s}^2
+\end{equation}
 
 The odometry update loop runs at $50\text{ Hz}$, providing sufficient control authority to the low-level navigation stack.
 
@@ -152,7 +188,7 @@ Each robot was equipped with the same sensor suite to ensure reliable localizati
 
 In standard ROS 2 Gazebo simulations, 2D laser rangefinders have a limited $3.5\text{ m}$ range, which creates localization challenges in large-scale facility layouts. In particular, because the robot cannot observe the opposite walls of the central courtyards, the AMCL localization filter produces large pose estimation errors.
 
-To address this issue, the warehouse workspace file overrides the default maximum range of the onboard 2D laser scanner to $20.0\text{ m}$. In particular, the sensor processes $360$ angular bins, providing $1^\circ$ angular resolution over an extended $20.0\text{ m}$ range. This allows the robot localization filter to observe the building pillars at the center of the simulation world, reducing the drift of the AMCL particle filter [citation].
+To address this issue, the warehouse workspace file overrides the default maximum range of the onboard 2D laser scanner to $20.0\text{ m}$. In particular, the sensor processes $360$ angular bins, providing $1^\circ$ angular resolution over an extended $20.0\text{ m}$ range. This allows the robot localization filter to observe the building pillars at the center of the simulation world, reducing the drift of the AMCL particle filter \cite{wu2025analysis}.
 
 \subsubsection{Optical Sensor and Vertical Scanning}
 
@@ -162,17 +198,23 @@ Each robot has a forward-looking optical sensor, capable of capturing $128 \time
 
 The autonomy of each robotic agent is defined by its internal battery capacity. In particular, the fleet's power management module monitors the State of Charge (SOC) of each robot:
 
-\[ E_{\text{total}}(t) \in [0.0\%, \; 100.0\%] \]
+\begin{equation}
+E_{\text{total}}(t) \in [0.0\%, \; 100.0\%]
+\end{equation}
 
 \subsubsection{Hybrid Discharge Model}
 
-Most autonomous mobile robots use a linear time-based discharge model, where SOC decreases with a constant rate after reaching the maximum capacity. In practice, however, the discharge process follows a more complex hybrid discharge pattern, governed by static baseline idling drain and dynamic, motion-induced load:
+Most autonomous mobile robots use a linear time-based discharge model, where SOC decreases with a constant rate after reaching the maximum capacity. In practice, however, the discharge process follows a more complex hybrid discharge pattern, governed by static baseline idling drain and dynamic, motion-induced load\cite{liu2023open}:
 
-\[ E_{\text{total}}(t) = E_{\text{start}} - \left( E_{\text{idle}}(t) + E_{\text{motion}}(t) \right) \]
+\begin{equation}
+E_{\text{total}}(t) = E_{\text{start}} - \left( E_{\text{idle}}(t) + E_{\text{motion}}(t) \right)
+\end{equation}
 
 The static component approximates the power consumed by the computer vision and perception modules. The dynamic component is proportional to the linear velocity of the robot:
 
-\[ E_{\text{motion}}(t) \propto \int_{0}^{t} v(\tau) \, d\tau \]
+\begin{equation}
+E_{\text{motion}}(t) \propto \int_{0}^{t} v(\tau) \, d\tau
+\end{equation}
 
 Therefore, robots that move at higher speeds (e.g., to avoid the narrow aisle bottlenecks) will experience faster battery drainage during the inspection of the inventory targets. This effect becomes most prominent during the long-range navigation tasks required to reach the distant inspection waypoints.
 
@@ -195,7 +237,9 @@ The decentralized nature of the multi-robot system imposes additional constraint
 
 Inspecting the cardboard surface of the storage unit requires the robotic agent to capture high-resolution images from a sufficient distance away while maintaining orthogonal vision on the target plane. In an industrial logistics warehouse, the storage units are placed on large-scale $1.8\text{ m} \times 3.0\text{ m} \times 6.0\text{ m}$ shelves, which extend vertically along the Z-axis:
 
-\[ Z_{\text{shelf}} \in [1.8\text{ m}, \; 6.0\text{ m}] \]
+\begin{equation}
+Z_{\text{shelf}} \in [1.8\text{ m}, \; 6.0\text{ m}]
+\end{equation}
 
 Conventional differential drive robots are limited to planar 2D navigation and cannot change their Z-position during the inspection of the storage shelf.
 
@@ -209,15 +253,19 @@ Let us define the vertical storage shelf as a flat surface aligned along the Z-a
 
 The robot attempting to capture the image of a high-rise cell must therefore observe the target surface at an angle $\theta_{\text{camera}}$ to the horizontal plane:
 
-\[ \theta_{\text{camera}} = \arctan\left(\frac{D}{H_{\text{cell}} - h_{\text{camera}}}\right) \]
+\begin{equation}
+\theta_{\text{camera}} = \arctan\left(\frac{D}{H_{\text{cell}} - h_{\text{camera}}}\right)
+\end{equation}
 
 which would cause significant perspective warping of the target image:
 
-\[ \theta_{\text{camera}} \neq 90^\circ \quad \forall H_{\text{cell}} \neq h_{\text{camera}} \]
+\begin{equation}
+\theta_{\text{camera}} \neq 90^\circ \quad \forall H_{\text{cell}} \neq h_{\text{camera}}
+\end{equation}
 
 Therefore, if the robot is not capable of changing its vertical position, the Z-axis location of the target surface determines the skew of the perspective projection observed by the optical sensor. This effect would be particularly detrimental for the edge detection component of the vision-based anomaly detection algorithm, potentially causing false positives due to perspective-induced texture distortion, as shown in [figure2]
 
-%\begin{figure}[h]\centering \includegraphics[width=0.7\textwidth]{figures/camera_angle_geometry.pdf} \caption{Incidence angle $\theta_{\text{camera}}$ as a function of camera height $h_{\text{camera}}$ and target cell height $H_{\text{cell}}$; convergence to $90^\circ$ under the UAV-proxy vertical translation.} \label{fig:camera_angle} \end{figure}.% 
+\begin{figure}[h]\centering \includegraphics[width=0.95\textwidth]{img/fig_4_2_camera_angle_geometry.pdf} \caption{Incidence angle $\theta_{\text{camera}}$ as a function of camera height $h_{\text{camera}}$ and target cell height $H_{\text{cell}}$; convergence to $90^\circ$ under the UAV-proxy vertical translation.} \label{fig:camera_angle} \end{figure} 
 
 To remove this source of perspective distortion, the robotic agent must be able to observe the target surface at a viewing angle of $\theta_{\text{camera}} = 90^\circ$.
 
@@ -227,9 +275,13 @@ $h_{\text{camera}} \to H_{\text{cell}}$
 
 Substituting this value into the expression for $\tan(\theta_{\text{camera}})$, we obtain:
 
-\[ \theta_{\text{camera}} = \arctan\left(\frac{D}{0}\right) \]
+\begin{equation}
+\theta_{\text{camera}} = \arctan\left(\frac{D}{0}\right)
+\end{equation}
 
-\[ \theta_{\text{camera}} = 90^\circ \]
+\begin{equation}
+\theta_{\text{camera}} = 90^\circ
+\end{equation}
 
 This perspective projection eliminates any skew, enabling the image resolution algorithm to correctly identify the micro-texture patterns of the cardboard surface.
 
@@ -239,7 +291,9 @@ Instead of implementing a full 3D flight dynamics model, which would require def
 
 In particular, while approaching the target inspection waypoint, the robot interrupts its global navigation planner and advances into the vertical scanning state. This state adds a time-dependent delay $\Delta t$ to the forward motion of the robot, which approximates the increase in UAV altitude during the vertical climb:
 
-\[ \Delta t = \begin{cases} 4.0\text{ s} & \text{for large shelves} \\ 1.5\text{ s} & \text{for small shelves} \end{cases} \]
+\begin{equation}
+\Delta t = \begin{cases} 4.0\text{ s} & \text{for large shelves} \\ 1.5\text{ s} & \text{for small shelves} \end{cases}
+\end{equation}
 
 During this time interval, the robot halts its horizontal motion (by setting the angular and linear velocities to zero) and captures a $128 \times 128$-pixel image of the target surface with the onboard optical sensor. The delay duration $\Delta t$ is chosen to be proportional to the height of the storage shelf parsed from the world SDF file, allowing the robot to emulate a continuous increase in the Z-position during the inspection of multi-tier shelves.
 
@@ -254,4 +308,4 @@ While the described approach allows the robotic agent to capture orthogonal imag
 
 \section{Simulation Environment Description}
 
-The simulation experiments were conducted in a GPU-accelerated environment hosted on the Windows Subsystem for Linux 2 (WSL2) with Ubuntu 24.04 LTS. In particular, ROS 2 Jazzy Jalisco and the Gazebo Harmonic simulation toolkit with the Ogre2 rendering engine were used to accelerate the physics simulation and provide high-quality computer graphics. The GPU acceleration was enabled to maintain the Real-Time Factor of $\text{RTF} \approx 1.0$. The specifics of the graphics acceleration, window manager configuration, and user interface are engineering-level details beyond the scope of this research and are discussed in Section~7.1 and Section~7.4. In particular, minor timing inconsistencies introduced by the WSL2 hypervisor are accounted for in the fault detection threshold described in Section~6.1.
+The simulation experiments were conducted in a GPU-accelerated environment hosted on the Windows Subsystem for Linux 2 (WSL2) with Ubuntu 24.04 LTS. In particular, ROS 2 Jazzy Jalisco and the Gazebo Harmonic simulation toolkit \cite{afzal2021gzscenic} with the Ogre2 rendering engine were used to accelerate the physics simulation and provide high-quality computer graphics. The GPU acceleration was enabled to maintain the Real-Time Factor of $\text{RTF} \approx 1.0$. The specifics of the graphics acceleration, window manager configuration, and user interface are engineering-level details beyond the scope of this research and are discussed in Section~7.1 and Section~7.4. In particular, minor timing inconsistencies introduced by the WSL2 hypervisor are accounted for in the fault detection threshold described in Section~6.1.

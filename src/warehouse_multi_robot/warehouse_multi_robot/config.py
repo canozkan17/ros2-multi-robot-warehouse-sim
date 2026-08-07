@@ -156,10 +156,12 @@ MOBILE_PALLET_SET = set(MOBILE_PALLET_GROUP)
 MOBILE_CLUSTER_NAME = "mobile_cluster"
 
 # ==============================================================================
+# ==============================================================================
 # 9. CORRIDORS
 # ==============================================================================
 # Map opposite shelf-sides that share the exact same narrow physical corridor
 SHARED_CORRIDORS = {
+    # --- Large Shelves Corridors (Aisles) ---
     "shelf_big_0_xplus": "corridor_west",
     "shelf_big_4_xminus": "corridor_west",
     
@@ -167,5 +169,35 @@ SHARED_CORRIDORS = {
     "shelf_big_3_xminus": "corridor_mid",
     
     "shelf_big_3_xplus": "corridor_east",
-    "shelf_big_2_xminus": "corridor_east"
+    "shelf_big_2_xminus": "corridor_east",
+
+    # --- Small Shelves West Column Corridors (Aisles) ---
+    "shelf_2_yminus": "corridor_small_west_top",
+    "shelf_1_yplus": "corridor_small_west_top",
+
+    "shelf_1_yminus": "corridor_small_west_mid",
+    "shelf_0_yplus": "corridor_small_west_mid",
+
+    "shelf_0_yminus": "corridor_small_west_bottom",
+    "shelf_yplus": "corridor_small_west_bottom",
+
+    # --- Small Shelves East Column Corridors (Aisles) ---
+    "shelf_3_yminus": "corridor_small_east_top",
+    "shelf_4_yplus": "corridor_small_east_top",
+
+    "shelf_4_yminus": "corridor_small_east_mid",
+    "shelf_6_yplus": "corridor_small_east_mid",
+
+    "shelf_6_yminus": "corridor_small_east_bottom",
+    "shelf_5_yplus": "corridor_small_east_bottom",
+
+    # --- Small Shelves Southeast Corner Column Corridors (Aisles) ---
+    "shelf_9_yplus": "corridor_small_corner_top",
+    "shelf_10_yminus": "corridor_small_corner_top",
+
+    "shelf_8_yplus": "corridor_small_corner_mid",
+    "shelf_9_yminus": "corridor_small_corner_mid",
+
+    "shelf_7_yplus": "corridor_small_corner_bottom",
+    "shelf_8_yminus": "corridor_small_corner_bottom"
 }

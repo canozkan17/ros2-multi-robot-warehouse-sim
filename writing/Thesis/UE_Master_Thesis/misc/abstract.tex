@@ -8,17 +8,20 @@
 \vspace*{0.5cm}
 
 \noindent
+Warehouse physical inventory audits present a trade-off between prohibitively expensive labor-intensive full-counts and dangerously sparse sampling intervals, exacerbated by increases in shelving height and density. Autonomous mobile robots offer an attractive alternative, but are typically organized around a single centralized node for route planning and collision avoidance, which presents a single point of failure; in realistic settings featuring steel rack warehouses, RF communications often prove too unreliable to avoid communication blackouts with any individual robot. Peer-to-peer systems circumvent this vulnerability, at the cost of global state knowledge typically required to manage traffic allocation, path prioritization, and diagnostics arbitration.
 
-\todo{write a one page abstract - Approximately 20 sentences with importance, background, current state, gap analysis, problem statement, your solution, your methods, your results, and improvement in field being discussed.}
+\vspace*{0.3cm}
+\noindent
+The prevailing literature on multi-robot task allocation either relies on market mechanisms or integer programming to model the interactions between agents and available resources, but both approaches exhibit a poor scalability profile beyond a few dozen robots due to the combinatorial complexity of the allocation problem. Similarly, analysis of mission continuation in the face of localization and kinematic failures is hindered by the lack of studies considering interdependencies between concurrent planning episodes. Studies which do attempt to quantify the costs of decentralization provide little granular detail on the throughput penalty incurred and rarely evaluate such penalties in an implemented system in favor of simulation. This thesis explores the ability of a minimally viable fleet of homogeneous robots to sustain near-optimal throughput in the face of an agent failure while eliminating the single point of failure by forgoing any centralized planning or monitoring infrastructure, including those needed to implement the proposed decentralized protocol.
 
-Four sentences of background and importance of this topic.
+\vspace*{0.3cm}
+\noindent
+Three TurtleBot3 Waffle robots were simulated using ROS~2 Jazzy and Gazebo Harmonic in a scenario featuring 142 targets distributed over 22 shelf/pallet units, with target positions pulled at runtime from the current environment state rather than hard-coded. Cardinal-direction sweep prioritization was used to assign goals with deterministic, easily-implemented same-side and same-item prioritization. To prevent congestion in narrow aisles while avoiding the need for a central authority, a lease-based spatial mutex was implemented using direct inter-agent communication over the twelve shared aisles in the environment. Covariance-gated local localization restarts, progress-dependent inter-agent stall detection with Pythagorean leg retraction, battery-aware intra-agent task re-prioritization, a linear SVM-based anomaly classifier with XGBoost fallback for spatial attribution, and a suite of related techniques were utilized to detect and respond to failures at multiple levels. Eighteen test runs were analyzed to determine the effect of fleet size, time of failure, and localization delay while holding the system topology constant to isolate the factors affecting inter-agent coordination.
 
-Four sentences defining the gap analysis (work not done in field) and your problem statement.
+\vspace*{0.3cm}
+\noindent
+A two-robot setup demonstrated a 99.4\% utilization of the maximum linear speed-up achievable through parallelization, suggesting that the additional mutual exclusion overhead is effectively zero when target clusters are sparsely allocated across the environment. Adding a third robot reduced the parallelization coefficient to 90.3\%, but this figure is not indicative of the protocol's ability to utilize additional agents: the failure in throughput was caused by the static zone allocation design reacting to three robots entering the narrow aisle producing three simultaneous pairwise mutual exclusions. Intentional agent failures were re-scheduled with less than six millisecond overhead in thirteen out of fifteen runs, well within the five-second heartbeat timeout used to detect silent failures. Mission-specific target coverage never dropped below 98\% in the presence of failures, and an inspection of the cause of these failures revealed that the issue was in the broad aisle-level granularity of the blacklist updates rather than task assignment logic. A similar analysis of the perception pipeline revealed that it processed 7278 scans with an average of 10.17 milliseconds between scans, which is well within the 1.5--4.0 second scanning window used in the physical inspection, though the backup classifier and passive heartbeat system were never triggered. Overall, the analysis demonstrated that a three-robot masterless system could effectively sustain parallelization levels of a centralized planner while demonstrating nearly instantaneous response in the face of an agent failure with correspondingly small drop in throughput.
 
-Four sentences about the methodology of your work.
-
-Six sentences of Results and significance of your results.
-
-Two sentence summarizing your contribution.
-
-\lipsum[1]
+\vspace*{0.3cm}
+\noindent
+This thesis demonstrated a decentralized coordination and recovery system which utilized a combination of task assignment, spatial mutual exclusion, and multi-tiered failure recovery to demonstrate the ability to process a warehouse inventory audit mission in a three-robot system without central coordination in favor of more scalable alternatives. In doing so, it produced concrete measurements of the trade-offs between centralized and decentralized system architectures in terms of throughput and sustainability.

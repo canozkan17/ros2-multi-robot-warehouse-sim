@@ -58,7 +58,7 @@ class BatteryMonitorNode(Node):
         # Tracking variables for physical distance-based drain
         self.last_x = None
         self.last_y = None
-        self.dynamic_drain_coefficient = 0.00  # Battery depleted by 0.15% per meter moved -> for experiment change to 0.00
+        self.dynamic_drain_coefficient = 0.15  # Battery depleted by 0.15% per meter moved -> for experiment change to 0.00
         
         # Subscribe to local namespaced AMCL pose to calculate step distance
         qos_transient = QoSProfile(

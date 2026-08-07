@@ -1,14 +1,14 @@
 \chapter{Fault-Tolerance Design and Behavioral Framework\label{cha:chapter6}}
 
-This chapter theoretically formalizes the mathematical foundations, distributed behavior patterns, and cyber-physical recovery protocols of our masterless multi-robot system, which are critical to its resilience. Whereas the steady-state behavior of the system under study is formalized in Chapter 5, industrial environments pose a significant challenge to robust and deterministic task finishing. Specifically, Section 6.1 describes the general fault classification and asynchronous dual-channel detection mechanism, whereas Sections 6.2--6.3 detail the hierarchical process of localization-dependent state recovery and progress-based kinematic stall detection. Section 6.4 then describes the reactive parallel-axis goal shifting paradigm used for obstacle avoidance, followed by a description of the decentralized blacklist propagation mechanism and associated state granularities in Section 6.5. maneuversFinally, Section 6.6 formulates the battery-aware decentralized task re-allocation protocol, while Section 6.7 outlines the analytical redundancy and exception-based failure switching mechanisms for the vision pipeline. Taken together, all components comprise the system-level fault resilience framework synthesized in Section 6.8.
+This chapter theoretically formalizes the mathematical foundations, distributed behavior patterns, and cyber-physical recovery protocols of our masterless multi-robot system, which are critical to its resilience. Whereas the steady-state behavior of the system under study is formalized in Chapter 5, industrial environments pose a significant challenge to robust and deterministic task finishing. Specifically, Section 6.1 describes the general fault classification and asynchronous dual-channel detection mechanism, whereas Sections 6.2--6.3 detail the hierarchical process of localization-dependent state recovery and progress-based kinematic stall detection. Section 6.4 then describes the reactive parallel-axis goal shifting paradigm used for obstacle avoidance, followed by a description of the decentralized blacklist propagation mechanism and associated state granularities in Section 6.5. Finally, Section 6.6 formulates the battery-aware decentralized task re-allocation protocol, while Section 6.7 outlines the analytical redundancy and exception-based failure switching mechanisms for the vision pipeline. Taken together, all components comprise the system-level fault resilience framework synthesized in Section 6.8.
 
 \section{Fault Taxonomy and Asynchronous Dual-Channel Detection}
 
-The decentralized multi-robot system under study incurs both computational and physical faults during its execution, which require careful taxanomical classification as system-specific state transitions. Particularly, the presence of large-scale multi-robot logistics platforms in confined spaces makes the distinction between physical and computational anomalies challenging due to the close interrelation of the robots' spatial and task allocation states.
+The decentralized multi-robot system under study incurs both computational and physical faults during its execution, which require careful taxonomical classification as system-specific state transitions. Particularly, the presence of large-scale multi-robot logistics platforms in confined spaces makes the distinction between physical and computational anomalies challenging due to the close interrelation of the robots' spatial and task allocation states.
 
 \subsection{Formal Classification of Fault Modes}
 
-Consistent with the fleet's edge-processing architecture, our multi-robot system makes the non-Byzantine assumption, namely, that faulty robots do not publish any deceptive or altered messages over the communication network. Instead, the system focuses on detecting and responding to silent (fail-silent) and stopping (fail-stop) anomalies \cite{PLACEHOLDER_fail_silent_taxonomy_2021_2026}. Consider the spatial state of the $i$-th robot, $\mathbf{x}_i(t) = [x_i(t), y_i(t), \psi_i(t)]^T \in \text{SE}(2)$.
+Consistent with the fleet's edge-processing architecture, our multi-robot system makes the non-Byzantine assumption, namely, that faulty robots do not publish any deceptive or altered messages over the communication network. Instead, the system focuses on detecting and responding to silent (fail-silent) and stopping (fail-stop) anomalies ~\cite{okumura2023fault}. Consider the spatial state of the $i$-th robot, $\mathbf{x}_i(t) = [x_i(t), y_i(t), \psi_i(t)]^T \in \text{SE}(2)$.
 
 A fail-silent manifestation corresponds to an abrupt failure of a robot's perception, decision-making, and communication components, depriving the other robots of the information about the failed robot's state:
 \begin{equation} \lim_{\tau \to 0^+} \mathbf{x}_i(t + \tau) = \emptyset \label{eq:fail_silent_state} \end{equation}
@@ -18,12 +18,12 @@ Unlike the fail-silent mode, a robot entering a fail-stop state powers down its 
 
 Formally, these failure modes are described within our decentralized state machine via the following transition conditions:
 \begin{enumerate}
-    \item \textbf{Resource exhaustion fault and subsequent failsafe shutdown:} The robot's battery level $E_i(t)$ reaches the lowest possible charge $E_{\text{fail}} = 0.0\%$. To maximize the audit throughput of active units and avoid narrow-aisle deadlock hazards associated with low-power return-to-dock maneuvers, the robot continues to track its trajectory until its battery is completely depleted before transitioning to the \texttt{FAILED} state. Subsequently, the robot deallocates all occupied spatial resources (e.g., trajectory segments) and allows the other robots to take over its residual tasks.
+    \item \textbf{Resource exhaustion fault and subsequent failsafe shutdown:} The robot's battery level $E_i(t)$ reaches the lowest possible charge $E_{\text{fail}} = 0.0\%$. To maximize the audit throughput of active units and avoid narrow-aisle deadlock hazards associated with low-power return-to-dock maneuvers, the robot continues to track its trajectory until its battery is completely depleted before transitioning to the \texttt{FAILED} state. Subsequently, the robot deallocates all occupied spatial resources (e.g., trajectory segments) and allows the other robots to take over its residual tasks~\cite{bolu2021adaptive}.
     \item \textbf{Localization uncertainty increase beyond the safety threshold:} $\sigma_{\text{amcl}} \ge \sigma_{\text{threshold}}$, suspending path tracking to prevent collisions.
     \item \textbf{Kinematic stall:} Motion being hindered by unmodeled obstacle or a local minimum in the navigation function, with the robot's commanded velocity \texttt{cmd\_vel} not corresponding to the actual robot velocity.
 \end{enumerate}
 
-The non-Byzantine nature of the detected faults is the result of deliberate design choices driven by the physical constraints of the problem at hand. Particularly, large-scale logistics operations typically take place within confined areas with no access to external networks. It is therefore unviable to utilize computationally heavy Byzantine-specific cryptography, consensus reaching algorithms, or digital signature verification procedures on resource-constrained embedded processors \cite{PLACEHOLDER_byzantine_overhead_2021_2026}.
+The non-Byzantine nature of the detected faults is the result of deliberate design choices driven by the physical constraints of the problem at hand. Particularly, large-scale logistics operations typically take place within confined areas with no access to external networks. It is therefore unviable to utilize computationally heavy Byzantine-specific cryptography, consensus reaching algorithms, or digital signature verification procedures on resource-constrained embedded processors ~\cite{strobel2020blockchain, roth2021byzantine}.
 
 \subsection{Asynchronous Dual-Channel Model: Self-Declaration vs. Passive Heartbeats}
 
@@ -33,13 +33,20 @@ In addition, the fleet utilizes a passive heartbeat-timeout channel to detect bo
 \begin{equation} t - t_{\text{last}, j} > T_{\text{timeout}} \label{eq:heartbeat_timeout_formula} \end{equation}
 where $T_{\text{timeout}} = 5.0\,\text{s}$.
 
-The choice of $T_{\text{timeout}} = 5.0\,\text{s}$ at $f_{\text{hb}} = 1.0\,\text{Hz}$ renders the timeout long enough to mitigate packet losses while still keeping the false-positive rate acceptable. As a practical matter, steel warehouses are prone to develop multipath fading and shadowing due to their infrastructure \cite{PLACEHOLDER_wireless_fading_logistics_2021_2026}, thus calling for reliable communication models. In particular, packet losses can be modeled as independent Bernoulli trials with probability $p_{\text{loss}} \in [0.0, \; 1.0]$. Let us define $n = T_{\text{timeout}} \cdot f_{\text{hb}} = 5$ as the number of consecutive missed heartbeats required to declare $a_j$ failed. Then, the probability of falsely re-allocating a failed agent's tasks equals:
+The choice of $T_{\text{timeout}} = 5.0\,\text{s}$ at $f_{\text{hb}} = 1.0\,\text{Hz}$ renders the timeout long enough to mitigate packet losses while still keeping the false-positive rate acceptable. As a practical matter, steel warehouses are prone to develop multipath fading and shadowing due to their infrastructure ~\cite{zadeh2025fast}, thus calling for reliable communication models. In particular, packet losses can be modeled as independent Bernoulli trials with probability $p_{\text{loss}} \in [0.0, \; 1.0]$. Let us define $n = T_{\text{timeout}} \cdot f_{\text{hb}} = 5$ as the number of consecutive missed heartbeats required to declare $a_j$ failed. Then, the probability of falsely re-allocating a failed agent's tasks equals:
 \begin{equation} \mathbb{P}(\text{False Alarm}) = p_{\text{loss}}^n = p_{\text{loss}}^5 \label{eq:bernoulli_false_alarm} \end{equation}
 At $p_{\text{loss}} = 0.20$ (a reasonable estimate given the harsh radio conditions), a simple calculation yields:
 \begin{equation} \mathbb{P}(\text{False Alarm}) = 0.20^5 = 0.00032 \quad (0.032\%) \label{eq:false_alarm_calculation} \end{equation}
-which renders the false-positive probability negligibly small. On the other hand, reducing the timeout to $T_{\text{timeout}} = 2.0\,\text{s}$ ($n=2$) would cause the false alarm probability to jump to $0.20^2 = 0.04$ ($4.0\%$). Thus, such a setting would cause frequent, disruptive task reallocations due to spurious failure declarations. At the same time, increasing $T_{\text{timeout}}$ to $15.0\,\text{s}$ would lead to excessive delays in failure detection, thereby prolonging the time to recovery and adding to the overall makespan. Therefore, $T_{\text{timeout}} = 5.0\,\text{s}$ offers a reasonable trade-off between minimizing both false-positive rates and detection latency.
+which renders the false-positive probability negligibly small. On the other hand, reducing the timeout to $T_{\text{timeout}} = 2.0\,\text{s}$ ($n=2$) would cause the false alarm probability to jump to $0.20^2 = 0.04$ ($4.0\%$). Thus, such a setting would cause frequent, disruptive task reallocations due to spurious failure declarations. At the same time, increasing $T_{\text{timeout}}$ to $15.0\,\text{s}$ would lead to excessive delays in failure detection, thereby prolonging the time to recovery and adding to the overall makespan. Therefore, $T_{\text{timeout}} = 5.0\,\text{s}$ offers a reasonable trade-off between minimizing both false-positive rates and detection latency.The state transitions of both explicit self-declaration and passive heartbeat-timeout detection channels leading to dynamic task re-allocation are summarized in Figure~\ref{fig:dual_channel_detection}.
 
-\subsection{Scalability Limits and $O(N^2)$ Overhead of Distributed Subscriptions}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.6\textwidth]{fig_6_1_dual_channel_detection.pdf}
+\caption{State diagram of the asynchronous dual-channel fault detection mechanism detailing explicit self-declarations for soft fail-stops and passive heartbeat timeouts for hard fail-silent states.}
+\label{fig:dual_channel_detection}
+\end{figure}
+
+\subsection{Scalability Limits and \texorpdfstring{$O(N^2)$}{O(N^2)} Overhead of Distributed Subscriptions}
 
 While the described failure detection mechanism eliminates the single point of failure associated with the dispatch server, it incurs a significant $\mathcal{O}(N^2)$ overhead in terms of both computation and communication. In particular, every active agent should subscribe to all peer topics in order to monitor their statuses, incurring substantial overhead on the vehicle's CPU and the shared Wi-Fi link.
 
@@ -53,7 +60,7 @@ Given the asynchronous nature of the publication-subscription model, it is possi
 
 Let us denote by $\mathcal{M} = [\mathcal{M}_{i,k}]_{i,k}$ the configuration matrix that encodes the current assignment of inspection points $p_k \in \mathcal{P}$ to robots $a_i \in \mathcal{A}$. In particular, $\mathcal{M}_{i,k} = 1$ if and only if inspection point $p_k$ is allocated to robot $a_i$. Given the failure detection mechanism from Section 6.1, each surviving agent $a_i$ is aware of a subset of failed peers $\Phi_i(t) \subset \mathcal{A}$. At any time $t$, the reallocation operator $\mathcal{R}$ defines the updated configuration matrix as:
 \begin{equation} \mathcal{R}: \mathcal{M} \to \mathcal{M}' \label{eq:reallocation_operator_definition} \end{equation}
-Whenever agent $a_i$ observes a failed heartbeat from agent $a_{\text{failed}}$, it updates its configuration matrix $\mathcal{M}_i$ according to Eq.~\ref{eq:reallocation_operator_definition}. To this end, agent $a_i$ maintains a set of failed peers $\Phi_i(t)$ and checks if $a_{\text{failed}}$ is in $\Phi_i(t)$:\footnote{At the software implementation level, this logical set $\Phi_i(t)$ is decoupled into two separate memory registers: \texttt{health\_monitor.failed\_robots} (used to trigger local calculations) and \texttt{processed\_failed\_robots} (used to filter incoming \texttt{/add\_waypoints} ROS~2 broadcasts).}
+Whenever agent $a_i$ observes a failed heartbeat from agent $a_{\text{failed}}$, it updates its configuration matrix $\mathcal{M}_i$ according to Eq.~\ref{eq:reallocation_operator_definition}. To this end, agent $a_i$ maintains a set of failed peers $\Phi_i(t)$ and checks if $a_{\text{failed}}$ is in $\Phi_i(t)$:\footnote{At the software implementation level, this logical set $\Phi_i(t)$ is decoupled into two separate memory registers: \texttt{health\_\allowbreak monitor.\allowbreak failed\_\allowbreak robots} (used to trigger local calculations) and \texttt{processed\_\allowbreak failed\_\allowbreak robots} (used to filter incoming \texttt{/add\_waypoints} ROS~2 broadcasts).}
 \begin{equation} a_{\text{failed}} \in \Phi_i(t) \label{eq:processed_set_check} \end{equation}
 If this condition is satisfied, the observed heartbeat message has already been taken into account and no further action is necessary. Conversely, if $a_{\text{failed}} \notin \Phi_i(t)$, agent $a_i$ adds $a_{\text{failed}}$ to its tracking state via:
 \begin{equation} \Phi_i(t^+) = \Phi_i(t) \cup \{ a_{\text{failed}} \} \label{eq:processed_set_update} \end{equation}
@@ -63,7 +70,7 @@ holds true for any two agents $a_i$ and $a_j$. In particular, it becomes possibl
 
 \section{Hierarchical State Recovery and Localization Stability}
 
-Robust mobile navigation in unconstrained warehouse environments requires maintaining accurate spatial state estimates of the robot's position on the global map. Sudden accelerations, wheel slippage on slippery concrete, and extended traversal of structurally similar shelving units may lead to imprecise localization updates, causing the global filter to drift away from the true robot pose. The two-stage hierarchical recovery procedure detailed below is used to recover from such events.
+Robust mobile navigation in unconstrained warehouse environments requires maintaining accurate spatial state estimates of the robot's position on the global map. Sudden accelerations, wheel slippage on slippery concrete, and extended traversal of structurally similar shelving units may lead to imprecise localization updates, causing the global filter to drift away from the true robot pose~\cite{fox2003kld}. The two-stage hierarchical recovery procedure detailed below is used to recover from such events.
 
 \subsection{Covariance-Triggered Fault Identification \& The Cyber-Physical Costmap Margin Paradox}
 
@@ -78,8 +85,14 @@ during which $\sigma_{\text{baseline}} = 0.15\,\text{m}$. At this level of uncer
 Meanwhile, during the initial spool up of the localization filter and large scale maneuvers around the warehouse perimeter, wheel slip can cause intermittent surges in the covariance value. A premature initiation of the recovery procedure due to $\sigma_{\text{amcl}} > \sigma_{\text{baseline}} = 0.15\,\text{m}$ would lead to unnecessary interruptions in the overall floor throughput by recovery-specific procedures, which is why a relaxed operational threshold is also introduced to the localization gate:
 \begin{equation} \sigma_{\text{threshold}} = \sigma_{\text{relax}} = 0.50\,\text{m} \label{eq:relaxed_uncertainty_threshold} \end{equation}
 with the robot's operational envelope defined by the narrowest aisle width $W_{\text{aisle}} = 2.25\,\text{m}$. Given the robot's overall diameter of $D_{\text{robot}} = 0.54\,\text{m}$ ($0.27\,\text{m}$ bounding radius), the corresponding side clearance at the center of the aisle is:
-\begin{equation} M_{\text{physical}} = \frac{W_{\text{aisle}} - D_{\text{robot}}}{2} = \frac{2.25 - 0.54}{2} = 0.855\,\text{m} \label{eq:physical_clearance_margin} \end{equation}
-but using the physical margin $M_{\text{physical}}$ as a collision avoidance margin involves the cyber-physical costmap inflation paradox. Namely, while local path planners in ROS typically utilize a set of layered costmaps, the obstacle layer in particular utilizes a global inflation radius of $r_{\text{global\_inflation}} = 0.55\,\text{m}$ which decreases the allowable margin before a \texttt{local\_map} obstacle layer to:
+\begin{equation}
+\begin{aligned}
+M_{\text{physical}} &= \frac{W_{\text{aisle}} - D_{\text{robot}}}{2} \\
+&= \frac{2.25 - 0.54}{2} = 0.855\,\text{m}
+\end{aligned}
+\label{eq:physical_clearance_margin}
+\end{equation}
+but using the physical margin $M_{\text{physical}}$ as a collision avoidance margin involves the cyber-physical costmap inflation paradox. Namely, while local path planners in ROS typically utilize a set of layered costmaps~\cite{lu2014layered}, the obstacle layer in particular utilizes a global inflation radius of $r_{\text{global\_inflation}} = 0.55\,\text{m}$ which decreases the allowable margin before a \texttt{local\_map} obstacle layer to:
 \begin{equation} M_{\text{inflation}} = M_{\text{physical}} - r_{\text{global\_inflation}} = 0.855 - 0.55 = 0.305\,\text{m} \label{eq:cyber_physical_margin} \end{equation}
 By approximating the robot's lateral position tracking error $e_y$ as a zero mean Gaussian with variance $\sigma^2_{\text{amcl}}$, the cumulative probability of a robot side sweeping the local planner's lethal obstacle buffer can be estimated with the standard normal Q-function. In practice, the one-dimensional approximation for the standard deviation $\sigma_{\text{amcl}}$ used for this calculation is selected conservatively as:
 \begin{equation} \mathbb{P}(\text{Inflation Breach}) = 2 Q\left( \frac{M_{\text{inflation}}}{\sigma_{\text{amcl}}} \right) \label{eq:collision_probability_q_function} \end{equation}
@@ -97,7 +110,7 @@ Using this localization gate as a trigger for the two-stage recovery procedure p
 
 \subsection{Stage 1: Local Spin Recovery and Bounded Dwell Constraints}
 
-With the localization estimate crossing the $\sigma_{\text{amcl}} > \sigma_{\text{threshold}}$ gate, the robot interrupts its active path follower and initiates Stage 1: Local Spin Recovery in order to reset the particle filter distribution. This is achieved by centering the robot's movement program on a rotation in place in order to allow rangefinders to observe nearby structural landmarks.
+With the localization estimate crossing the $\sigma_{\text{amcl}} > \sigma_{\text{threshold}}$ gate, the robot interrupts its active path follower and initiates Stage 1: Local Spin Recovery in order to reset the particle filter distribution. This is achieved by centering the robot's movement program on a rotation in place in order to allow rangefinders to observe nearby structural landmarks~\cite{karakaya2026cg}.
 
 First, the robot zeroes out its translational velocity component $v_x = 0.0\,\text{m/s}$ while initiating a slow angular rotation sweep:
 \begin{equation} \omega_z = 0.3\,\text{rad/s} \label{eq:spin_velocity_command} \end{equation}
@@ -125,7 +138,14 @@ Meanwhile, during the long spin-down periods of Stages 1 and 2, the robot must c
 
 In order to avoid this deadlock scenario, the lease renewal procedure is separated from the robot's ability to move through the environment. In particular, the claim renewal procedure runs as an independent thread at a fixed $T_{\text{renew}} = 1.5\,\text{s}$ interval regardless of the robot's current state. As a result, as long as the robot is not formally \texttt{FAILED}, its current location lease:
 \begin{equation} t_{\text{expire}} = t + \tau_{\text{lease}} \label{eq:lease_calculation} \end{equation}
-with $\tau_{\text{lease}} = 6.0\,\text{s}$ is renewed at every cycle, keeping its exclusive access to the corridor section open until it completes the spin recovery procedure. This ensures that a robot performing a prolonged recovery spin is able to retain its access to the aisle, keeping its egress path available once it finishes the procedure.
+with $\tau_{\text{lease}} = 6.0\,\text{s}$ is renewed at every cycle, keeping its exclusive access to the corridor section open until it completes the spin recovery procedure. This ensures that a robot performing a prolonged recovery spin is able to retain its access to the aisle, keeping its egress path available once it finishes the procedure.The overall execution flow of the two-stage recovery procedure, along with the independent spatial lease-renewal thread, is illustrated in Figure~\ref{fig:hierarchical_recovery}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{fig_6_2_hierarchical_recovery.pdf}
+\caption{Flowchart of the two-stage hierarchical localization recovery mechanism, highlighting the transition from Stage~1 local spin recovery to Stage~2 global reinitialization and the independent corridor lease persistence thread.}
+\label{fig:hierarchical_recovery}
+\end{figure}
 
 \begin{figure}[htbp]
 \centering
@@ -172,16 +192,19 @@ with $\tau_{\text{lease}} = 6.0\,\text{s}$ is renewed at every cycle, keeping it
 
 \section{Progress-Based Kinematic Stall Detection and Physical Escape}
 
-Robots moving their bodies inside a logistics warehouse may encounter temporary workspace confinements. While the global planner computes paths based on fixed facility layout, the local trajectory controller must avoid dynamically extruded obstacle boundaries. To physically bypass such planning constraints and restore the agent's free mobility, we implement the progress-based kinematic stall detection and localization-aware escape policy.
+Robots moving their bodies inside a logistics warehouse may encounter temporary work\-space confinements. While the global planner computes paths based on fixed facility layout, the local trajectory controller must avoid dynamically extruded obstacle boundaries. To physically bypass such planning constraints and restore the agent's free mobility, we implement the progress-based kinematic stall detection and localization-aware escape policy.
 
 \subsection{Time-Integrated Position Progress Filter versus Motor Current Estimation}
 
-The majority of collision and stall detectors in the mobile logistics domain rely on robot drive motor current estimation to infer the presence of unexpected physical interactions with the environment \cite{PLACEHOLDER_motor_current_limitation}. The current estimation module operates on the assumption that any external mechanical resistance raises the drive motor torque beyond the expected value, manifesting as an anomalous current draw in the corresponding drive motor. However, most logistics facilities have a concrete floor with friction significantly lower than that expected in the average home environment. As such, the robot's differential wheels experience an abrupt loss of grip when physically entrapped by an unmapped obstacle or a local planning minimum.
+The majority of collision and stall detectors in the mobile logistics domain rely on robot drive motor current estimation to infer the presence of unexpected physical interactions with the environment ~\cite{xiang2025servo}. The current estimation module operates on the assumption that any external mechanical resistance raises the drive motor torque beyond the expected value, manifesting as an anomalous current draw in the corresponding drive motor. However, most logistics facilities have a concrete floor with friction significantly lower than that expected in the average home environment. As such, the robot's differential wheels experience an abrupt loss of grip when physically entrapped by an unmapped obstacle or a local planning minimum.
 
 At the moment of such robot-obstacle engagement, the robot's differential wheels spin freely due to the smoothness of the floor. As a result, the torque and, consequently, the drive motor current remain near their steady-state operating values. Hence, the current-based collision estimation module fails to detect the stall because its perception of external mechanical resistance does not account for the robot's differential locomotion. Instead, we propose using the position progress time-integrated filter that tracks the robot's spatial progress relative to the global map frame.
 
 Let $\mathbf{p}(t) = [x(t), y(t)]^T \in \mathbb{R}^2$ denote the filtered position coordinates of the robot footprint in the global map frame at a given moment $t$. The time-integrated spatial progress over a moving time window $T_{\text{window}}$ is defined as:
-\begin{equation} d_{\text{progress}}(t) = \|\mathbf{p}(t) - \mathbf{p}(t - T_{\text{window}})\|_2 = \sqrt{\left(x(t) - x(t - T_{\text{window}})\right)^2 + \left(y(t) - y(t - T_{\text{window}})\right)^2} \label{eq:spatial_progress_formula} \end{equation}
+\begin{equation}
+\thinmuskip=1mu\medmuskip=1mu\thickmuskip=2mu
+d_{\text{progress}}(t) = \|\mathbf{p}(t) - \mathbf{p}(t - T_{\text{window}})\|_2 = \sqrt{\left(x(t) - x(t - T_{\text{window}})\right)^2 + \left(y(t) - y(t - T_{\text{window}})\right)^2} \label{eq:spatial_progress_formula}
+\end{equation}
 With that, the progress-based kinematic stall detector compares the filtered progress value to a configurable progress epsilon to decide whether to initiate the emergency escape procedure:
 \begin{equation} d_{\text{progress}}(t) < \delta_{\text{progress}} \label{eq:stall_trigger_condition} \end{equation}
 Where the progress epsilon $\delta_{\text{progress}} = 0.03\,\text{m}$ represents the minimum distance the robot should traverse within the timeframe $T_{\text{window}}$ before raising the stall flag.
@@ -212,7 +235,14 @@ for a duration of $t_{\text{rotation}} = 0.90\,\text{s}$.
 
 To prevent the robot from oscillating between the two positions when stuck, we apply the following alternating rotation multiplier:
 \begin{equation} \gamma = (-1)^{k+1} \label{eq:alternating_direction_multiplier} \end{equation}
-which allows the robot to turn left $\gamma = +1$ on the first iteration and then right $\gamma = -1$ on the subsequent attempts. The loop runs a maximum of $N_{\text{escape\_max}} = 5$ times in total before the task is deferred back to the global pool, allowing a peer agent to claim the target. We suggest utilizing the described open-loop physical escape sequence because it safely moves the robot away from the obstacle while minimizing the risk of secondary collisions.
+which allows the robot to turn left $\gamma = +1$ on the first iteration and then right $\gamma = -1$ on the subsequent attempts. The loop runs a maximum of $N_{\text{escape\_max}} = 5$ times in total before the task is deferred back to the global pool, allowing a peer agent to claim the target. We suggest utilizing the described open-loop physical escape sequence because it safely moves the robot away from the obstacle while minimizing the risk of secondary collisions~\cite{tang2025path}. Figure~\ref{fig:stall_escape_workflow} details the decision pipeline for time-integrated position progress filtering, open-loop linear retreats, and direction-alternating rotational escapes. The complete state machine executing this open-loop physical escape sequence and managing the progress-based stall watchdog is compiled in Appendix~\ref{app:code_recovery} (Listing~\ref{lst:recovery_manager_core}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig_6_3_stall_escape_workflow.pdf}
+\caption{Progress-based kinematic stall detection and open-loop escape control loop, illustrating the alternating left/right rotational escape strategy and task deferral fallback.}
+\label{fig:stall_escape_workflow}
+\end{figure}
 
 \section{Reactive Parallel-Axis Coordinate Shifting under Spatial Occlusion}
 
@@ -221,8 +251,14 @@ In a masterless multi-robot inspection paradigm, the vehicles must be able to na
 \subsection{Spatial Occlusion Boundary Conditions and Mapping of Failed Peers}
 
 Let us define the position of a failed robot $a_j$ by its coordinates $[px_j, py_j]^T \in \mathbb{R}^2$. Furthermore, assuming that the robot has a physical footprint of a circle of radius $D_{\text{safe}}$, the failed robot presents a circular occlusion region of radius $D_{\text{safe}}$ to the rest of the fleet:
-\begin{equation} \mathcal{B}_j = \left\{ \mathbf{x} \in \mathbb{R}^2 \mid \|\mathbf{x} - [px_j, py_j]^T\|_2 < D_{\text{safe}} \right\} \label{eq:occlusion_bubble_definition} \end{equation}
-with $D_{\text{safe}} = 0.85\,\text{m}$. Any active inspection target with a nominal target position $\mathbf{q}_{\text{target}} = [x_{\text{target}}, y_{\text{target}}]^T \in \mathbb{R}^2$ located within the circular region:
+\begin{equation}
+\begin{aligned}
+\mathcal{B}_j &= \left\{ \mathbf{x} \in \mathbb{R}^2 \mid
+\|\mathbf{x} - \mathbf{p}_j\|_2 < D_{\text{safe}} \right\}
+\end{aligned}
+\label{eq:occlusion_bubble_definition}
+\end{equation}
+with $D_{\text{safe}} = 0.85\,\text{m}$. Any active inspection target with a nominal target position $\mathbf{q}_{\text{target}} = [x_{\text{target}}, y_{\text{target}}]^T \\ \in \mathbb{R}^2$ located within the circular region:
 \begin{equation} \mathbf{q}_{\text{target}} \in \mathcal{B}_j \label{eq:occlusion_detection_condition} \end{equation}
 is considered occluded and must be adjusted in real-time to provide visual access to the storage targets.
 
@@ -270,17 +306,24 @@ The shifted waypoint should preserve the viewing direction to a target surface. 
 \begin{equation} \theta_{\text{dev}} = \arctan\left( \frac{\text{Shift Distance}}{1.20} \right) = \arctan\left( \frac{s_{\text{shift}}}{1.20} \right) \label{eq:perspective_deviation_formula} \end{equation}
 where $s_{\text{shift}} \in \{|x_{\text{shifted}} - x_{\text{target}}|, \; |y_{\text{shifted}} - y_{\text{target}}|\}$ is the displacement along the parallel axis. The constraint is defined as:
 \begin{equation} \theta_{\text{dev}} \le \theta_{\text{max}} = 35^\circ \quad (0.61\,\text{rad}) \label{eq:perspective_validation_gate} \end{equation}
-which corresponds to 35 degrees difference at which the local binary pattern histograms become rotationally inconsistent \cite{PLACEHOLDER_perspective_distortion_limits_2021_2026}.
+which corresponds to 35 degrees difference at which the local binary pattern histograms become rotationally inconsistent ~\cite{zitouni2022local}.
 
 In practice, the onboard navigation controller performs this check by estimating the difference between the current robot yaw and the shelf's orthogonal normal:
-\begin{equation} \theta_{\text{dev\_diff}} = \left\lvert \text{atan2}\left( \sin(\psi_{\text{align}} - \theta_{\text{perp}}), \; \cos(\psi_{\text{align}} - \theta_{\text{perp}}) \right) \right\lvert \label{eq:implementation_angle_diff} \end{equation}
+\begin{equation} \theta_{\text{dev\_diff}} = \left\lvert \text{atan2}\left( \sin(\psi_{\text{align}} - \theta_{\text{perp}}), \; \cos(\psi_{\text{align}} - \theta_{\text{perp}}) \right) \right\rvert \label{eq:implementation_angle_diff} \end{equation}
 Evaluating the parallel displacement along the planar metric induces a heading estimate confined to the one-dimensional subspace:
 \begin{equation} \psi_{\text{align}} - \theta_{\text{perp}} \in \left\{ -\frac{\pi}{2}, \; \frac{\pi}{2} \right\} \label{eq:implementation_angular_lock} \end{equation}
 By implication, the heading deviation $\theta_{\text{dev\_diff}}$ reduces to a constant $\pi/2$ check irrespective of the displacement amplitude.
 
 While this singular orthogonal projection renders the visual inspection task susceptible to immediate deferrals per Eq.~\ref{eq:perspective_validation_gate}, it also serves as an implementation-level lock for the distributed planner. In essence, the navigation stack's ideal continuous projection described by Eq.~\ref{eq:perspective_deviation_formula} becomes decoupled from the conservative on-edge validation lock. The latter ensures that the fleet does not attempt any navigation maneuvers deviating from the strict orthogonal view, thus guaranteeing that the onboard visual classifiers are not fed with distorted texture data.
 
-If the shifted goal coordinate fails either Eq.~\ref{eq:boundary_validation_limits} or Eq.~\ref{eq:perspective_validation_gate}, the target is rejected. Instead of retrying the inspection, the robot immediately offloads the inspection goal back into the global unprocessed task pool. This way, the agent avoids futile energy expenditure on physically inaccessible targets, while the remaining fleet processes the blacklisted location in parallel.
+If the shifted goal coordinate fails either Eq.~\ref{eq:boundary_validation_limits} or Eq.~\ref{eq:perspective_validation_gate}, the target is rejected. Instead of retrying the inspection, the robot immediately offloads the inspection goal back into the global unprocessed task pool. This way, the agent avoids futile energy expenditure on physically inaccessible targets, while the remaining fleet processes the blacklisted location in parallel.The entire goal shifting process, differentiated by approach face orientations and verified through spatial and perspective validation gates, is depicted in Figure~\ref{fig:parallel_axis_shifting}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig_6_4_parallel_axis_shifting.pdf}
+\caption{Flowchart of the parallel-axis coordinate shifting process under peer spatial occlusion, detailing Case~1/Case~2 geometry checks, physical boundary validation (Gate~1), and angular distortion limits (Gate~2).}
+\label{fig:parallel_axis_shifting}
+\end{figure}
 
 \section{Decentralized Blacklist Propagation and State Granularity}
 
@@ -296,6 +339,12 @@ and defers the goal back into the global unprocessed task pool.
 
 While the soft limit of 0 attempts would allow multiple robots to retry the navigation to the target, setting the threshold $\tau_{\text{blacklist}} = 2$ gives sufficient time for individual agents to assess the obstacle persistence. As a result, the inspection fleet blacklists multi-agent navigation attempts from the global planner, thus preventing energy waste on the persistent obstacles.
 
+To ensure that the mission state-machine accurately reflects the physically reachable workspace, the blacklist propagation dynamically reduces the agent's target quota. Suppose that $W_{\text{limit}, i}(t)$ is the target limit for agent $a_i$ at moment $t$. If one of the candidate target faces $s_k$, which contains a set of discrete inspection sections $\mathcal{P}_{s_k} \subset \mathcal{P}$, among which $\lvert\mathcal{P}_{s_k}\rvert = 4$ are dedicated to shelving units while $\lvert\mathcal{P}_{s_k}\rvert = 1$ accommodate standard pallets, gets blacklisted on the second attempt, the target limit can be dynamically adjusted as follows:
+\begin{equation} \label{eq:dynamic_limit_reduction} 
+W_{\text{limit}, i}(t^+) = W_{\text{limit}, i}(t) - \lvert\mathcal{P}_{s_k}\rvert 
+\end{equation}
+In such a manner, the decreased target limit prevents the agent from getting stuck in an endless cycle of failed attempts to reach a particular target. This way, by dynamically adjusting the target limit in accordance with the current occupancy of the workspace, the decentralized FSM can safely transition to the \texttt{IDLE} state and return to spawn once the task is complete, thus fulfilling the condition of global convergence~\cite{colledanchise2018behavior}.
+
 \subsection{Peer-to-Peer Blacklist Monotonicity and Propagation Dynamics}
 
 After the inspection agent $a_i$ blacklists the target $p_k$, it ought to propagate this decision to the rest of the fleet. In particular, the local blacklist registry of the agent $a_i$ may be represented as $\mathcal{B}_i \subset \mathcal{P}$. Given the masterless nature of the fleet, other agents should update their local registries in response to this event.
@@ -308,7 +357,14 @@ Thus, any individual agent receiving the blacklist event will have its local tas
 
 The monotonicity of the task queue updates is formally given by Eq.~\ref{eq:blacklist_monotonicity}:
 \begin{equation} \mathcal{B}_j(t_1) \subseteq \mathcal{B}_j(t_2) \quad \forall t_1 \le t_2 \label{eq:blacklist_monotonicity} \end{equation}
-which holds true for the distributed propagation mechanism. In practice, this property prevents task assignment inconsistencies across the fleet, thereby rendering the local pruning updates sufficient for achieving consensus \cite{PLACEHOLDER_eventual_consistency_robotics_2021_2026}. In particular, the distributed nature of the propagation mechanism thwarts the possibility of split-brain scenarios on the task queue updates, thus obviating the need for consensus-based coordination protocols.
+which holds true for the distributed propagation mechanism. In practice, this property prevents task assignment inconsistencies across the fleet, thereby rendering the local pruning updates sufficient for achieving consensus ~\cite{bonomi2023optimal}. In particular, the distributed nature of the propagation mechanism thwarts the possibility of split-brain scenarios on the task queue updates, thus obviating the need for consensus-based coordination protocols.The asynchronous message exchanges and monotonic queue pruning sequence triggered upon exceeding the local deferral limit are shown in Figure~\ref{fig:blacklist_propagation}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_6_5_blacklist_propagation.pdf}
+\caption{Sequence diagram of decentralized blacklist propagation, depicting local deferral counting, DDS event broadcasting, peer registry updates, and monotonic task queue pruning.}
+\label{fig:blacklist_propagation}
+\end{figure}
 
 \subsection{Side-Level Pruning vs. Localized Occlusion Resolution}
 
@@ -344,11 +400,18 @@ The summation of task numbers allocated to survivors by the rounding procedure d
 \begin{equation} R = N_{\text{tasks}} - \sum_{s \in \mathcal{S}} N_s \label{eq:rounding_residual} \end{equation}
 Unlike the floor rounding function that systematically produces a positive residue, the round function can produce both positive and negative residuals, thus, allowing the task number of some survivor to exceed its proportional share. To avoid time-consuming multi-agent negotiations on who should accept the extra task(s), the re-allocation procedure exploits the stratified rounding rule, which uniformly adds the extra tasks to the last agent specified in the system's ordered node specification table.
 
-The rounding asymmetry produces a minor position-dependent bias in the task allocation between the agents. In practice, the bias rarely exceeds 1 task, even when the survivor set size is reduced to $\lvert\mathcal{S}\rvert = 2$ after one robot failure. The additional energy consumption due to this rounding asymmetry is negligible compared to the computational burden of the multi-agent task-reallocation negotiation process. By avoiding the need for such a negotiation, the local index-based rounding rule reduces the re-allocation latency to under 1 s. Note that the Largest Remainder method \cite{PLACEHOLDER_hamilton_apportionment} also exploits the deterministic rounding rules to apportion the integer residues across multiple agents, but it is generally more involved since it dynamically tracks the fractional part after each task allocation. Since the task reallocation procedure for our masterless fleet does not have a built-in task negotiation mechanism, we follow the simplest possible rounding rule, which adds all the residues to the last agent in the ordered specification table. This approach reduces the edge CPU time spent on task reallocation, which is critical for maintaining a short task completion time when a failure occurs.
+The rounding asymmetry produces a minor position-dependent bias in the task allocation between the agents. In practice, the bias rarely exceeds 1 task, even when the survivor set size is reduced to $\lvert\mathcal{S}\rvert = 2$ after one robot failure. The additional energy consumption due to this rounding asymmetry is negligible compared to the computational burden of the multi-agent task-reallocation negotiation process. By avoiding the need for such a negotiation, the local index-based rounding rule reduces the re-allocation latency to under 1 s. Note that the Largest Remainder method ~\cite{brill2018multiwinner} also exploits the deterministic rounding rules to apportion the integer residues across multiple agents, but it is generally more involved since it dynamically tracks the fractional part after each task allocation. Since the task reallocation procedure for our masterless fleet does not have a built-in task negotiation mechanism, we follow the simplest possible rounding rule, which adds all the residues to the last agent in the ordered specification table. This approach reduces the edge CPU time spent on task reallocation, which is critical for maintaining a short task completion time when a failure occurs.
 
 \subsection{Cascading Failure Idempotency and Workload Reset Mechanics}
 
-A critical requirement for task-reallocation procedures in a decentralized many-robot formation is the ability to maintain consensus in the face of cascading robot failures. If the initial task-allocation procedure is applied repeatedly after each failure, the workload distributions may become skewed due to rounding errors or outdated information about the battery levels of failed agents. To address this issue, our task-reallocation procedure includes a reset mechanism, which wipes the unprocessed task queues of surviving agents upon each peer failure and re-computes the target assignment from scratch with an updated list of active agents. This approach prevents the accumulation of rounding errors but requires extra computation to process the updated task list each time the survivor set $\mathcal{S}$ changes.
+A critical requirement for task-reallocation procedures in a decentralized many-robot formation is the ability to maintain consensus in the face of cascading robot failures. If the initial task-allocation procedure is applied repeatedly after each failure, the workload distributions may become skewed due to rounding errors or outdated information about the battery levels of failed agents. To address this issue, our task-reallocation procedure includes a reset mechanism, which wipes the unprocessed task queues of surviving agents upon each peer failure and re-computes the target assignment from scratch with an updated list of active agents. This approach prevents the accumulation of rounding errors but requires extra computation to process the updated task list each time the survivor set $\mathcal{S}$ changes. Figure~\ref{fig:battery_reallocation} illustrates the battery-proportional task allocation workflow, stratified residual assignment, and the workload reset mechanism under cascading peer failures.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig_6_6_battery_reallocation.pdf}
+\caption{Workload re-allocation protocol workflow showing battery-proportional splitting, stratified residual assignment, queue wiping, and reset mechanics under cascading agent failures.}
+\label{fig:battery_reallocation}
+\end{figure}
 
 \section{Analytical Redundancy and Exception-Driven Failover}
 
@@ -356,11 +419,11 @@ The onboard execution of machine learning inference on embedded processors is as
 
 \subsection{Double Classifier Framework: Linear Hyperplanes vs. Orthogonal Decision Forests}
 
-The concept of analytical redundancy originates from control theory, where it has been used to design robust flight control systems \cite{PLACEHOLDER_analytical_redundancy_aerospace_2021_2026}. By using dissimilar computational pathways, analytical redundancy ensures system reliability against software-level and circuit-level failures.
+The concept of analytical redundancy originates from control theory, where it has been used to design robust flight control systems ~\cite{belgacem2025toward}. By using dissimilar computational pathways, analytical redundancy ensures system reliability against software-level and circuit-level failures.
 
-The vision-based classification pipeline employs a double classifier framework, where the primary perception module is cross-validated by an auxiliary analytical redundancy module. As described in detail in Chapter 5, the primary classification algorithm is a soft-margin Linear SVM, which produces a probabilistic confidence score for each class label. The Linear SVM trains on the 1924-dimensional fused feature vector, which combines 160 LBP features and 1764 HOG features, projected on the 125-dimensional PCA subspace. This choice minimizes the memory footprint and computational requirements of the classifier while ensuring adequate separation between classes. The linear decision boundary of the chosen classifier also facilitates a closed-form spatial back-projection, which provides a direct explanation of the model's behavior.
+The vision-based classification pipeline employs a double classifier framework, where the primary perception module is cross-validated by an auxiliary analytical redundancy module. As described in detail in Chapter 5, the primary classification algorithm is a soft-margin Linear SVM~\cite{cortes1995support}, which produces a probabilistic confidence score for each class label. The Linear SVM trains on the 1924-dimensional fused feature vector, which combines 160 LBP features and 1764 HOG features~\cite{dalal2005histograms}, projected on the 125-dimensional PCA subspace. This choice minimizes the memory footprint and computational requirements of the classifier while ensuring adequate separation between classes. The linear decision boundary of the chosen classifier also facilitates a closed-form spatial back-projection, which provides a direct explanation of the model's behavior~\cite{cervantes2020support}.
 
-The failure modes of the linear classifier include matrix singularities due to extreme scaling of feature coordinates, invalid feature-dimension reduction during PCA projection, or misaligned memory addresses during the projection operation. To increase fault tolerance against such rare but critical failures, the Linear SVM is cross-validated by an analytical redundancy module, which implements the eXtreme gradient boosting (XGBoost) algorithm. Unlike Linear SVM, which defines the separating hyperplane by minimizing the distance between positive and negative example vectors, the tree-based algorithm employs an orthogonal decision tree to classify examples. The decision trees used in the XGBoost classifier are trained in a parallelized manner, enabling this classifier to achieve good accuracy-performance trade-offs while being naturally protected against certain types of linear algebra-related failures \cite{PLACEHOLDER_xgboost_edge_vision_2021_2026}.
+The failure modes of the linear classifier include matrix singularities due to extreme scaling of feature coordinates, invalid feature-dimension reduction during PCA projection, or misaligned memory addresses during the projection operation. To increase fault tolerance against such rare but critical failures, the Linear SVM is cross-validated by an analytical redundancy module, which implements the eXtreme gradient boosting (XGBoost) algorithm~\cite{chen2016xgboost}. Unlike Linear SVM, which defines the separating hyperplane by minimizing the distance between positive and negative example vectors, the tree-based algorithm employs an orthogonal decision tree to classify examples. The decision trees used in the XGBoost classifier are trained in a parallelized manner, enabling this classifier to achieve good accuracy-performance trade-offs while being naturally protected against certain types of linear algebra-related failures ~\cite{mannaro2026interpretable}.
 
 An exception-driven state machine enables the failover procedure, which transfers the classification responsibility from the primary Linear SVM to the auxiliary XGBoost classifier. While both classifiers operate in parallel, the Linear SVM is used by default to process the optical flow frames submitted by the master scanning task as part of the vision-based perception loop. The XGBoost classifier runs in an inactive state to save CPU cycles until the exception handler interrupts the execution of the primary classifier. Once the exception handler identifies an irrecoverable error, it replaces the failed Linear SVM module with the always-active XGBoost classifier to process the next camera frames. Using an entirely different mathematical formalism, the two analytical redundancy classifiers ensure that the vision-based perception system remains operational even if one of them fails due to a memory error or an arithmetic exception.
 
@@ -397,6 +460,15 @@ The analytical models developed in this paper can be organized into a multi-laye
     \item \textbf{The Fleet Layer (Level 5):} Ensures mission level resilience against robot failures using battery aware load balancing of the failed robot's tasks among the surviving robots.
 \end{enumerate}
 
+The structural interaction between the vision pipeline's analytical redundancy, the front-end preprocessing single point of failure (SPOF), and the overall multi-layered defense-in-depth fault mitigation architecture is synthesized in Figure~\ref{fig:analytical_redundancy_defense}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_6_7_analytical_redundancy_defense.pdf}
+\caption{System-of-systems synthesis diagram integrating the vision pipeline's exception-driven classification failover (Section~6.7), shared preprocessing SPOF risk, and the 5-level defense-in-depth fault tolerance framework (Section~6.8).}
+\label{fig:analytical_redundancy_defense}
+\end{figure}
+
 \subsection{Compounding and Correlated Failure Mode Analysis}
 
 The true utility of the system-of-systems framework stems from its ability to handle correlated and compounding failure modes. Due to spatial and temporal proximity, the individual effects of a single exogenous shock (e.g., an obstacle creating a blockage zone) may propagate through multiple layers of the system-of-systems architecture. A correlated failure scenario can be better understood by analyzing the cascading impact on the fleet operations:
@@ -418,48 +490,63 @@ The above condition stipulates that the decentralized fleet operations will prov
 
 To summarize the fault tolerance characteristics of the decentralized multi-robot system described in this paper, we provide the trade-off breakdown in Table 6.1 below. We also compare our novel approach to the canonical centralized alternatives across a series of design dimensions in Table 6.2 below. Finally, Table 6.3 below specifies the performance characteristics of the edge-classifier redundancy mechanism.
 
+% ==============================================================================
+% TABLO 6.1
+% ==============================================================================
 \begin{table}[htbp]
 \centering
+\small
+\setlength{\tabcolsep}{5pt}
 \caption{Summary of fault-tolerance parameter thresholds and their operational failure-mode trade-offs.}
 \label{tab:fault_tolerance_parameters}
-\begin{tabular}{@{}lllll@{}}
+\begin{tabularx}{\textwidth}{@{}l l L L L@{}}
 \toprule
 \textbf{Parameter Symbol} & \textbf{Nominal Value} & \textbf{Under-Tuning Risk} & \textbf{Over-Tuning Risk} & \textbf{Prevented Failure Mode} \\ \midrule
-$T_{\text{timeout}}$ & $5.0\,\text{s}$ & False-positive peer death & Delayed re-allocation (stalled tasks) & Unresponsive fail-silent lockups \\
-$\sigma_{\text{baseline}}$ & $0.15\,\text{m}$ & Excessive recovery spins & Collision with narrow aisle walls & Localization divergence \\
-$\delta_{\text{progress}}$ & $0.03\,\text{m}$ & Failure to detect entrapments & False stall on localization jitter & Infinite wait states / deadlocks \\
-$t_{\text{backup}}$ & $1.67\,\text{s}$ & Inadequate retreat distance & Unnecessary rear collision risks & Local costmap inflation traps \\
+$T_{\text{timeout}}$ & $5.0\,\text{s}$ & False-positive peer death & Delayed re-allocation (stalled tasks) & Unresponsive fail-silent lockups \\ \addlinespace
+$\sigma_{\text{baseline}}$ & $0.15\,\text{m}$ & Excessive recovery spins & Collision with narrow aisle walls & Localization divergence \\ \addlinespace
+$\delta_{\text{progress}}$ & $0.03\,\text{m}$ & Failure to detect entrapments & False stall on localization jitter & Infinite wait states / deadlocks \\ \addlinespace
+$t_{\text{backup}}$ & $1.67\,\text{s}$ & Inadequate retreat distance & Unnecessary rear collision risks & Local costmap inflation traps \\ \addlinespace
 $\tau_{\text{blacklist}}$ & $2$ strikes & Premature target abandonment & Infinite retry loops on blocked paths & Unreachable waypoint energy waste \\ \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
+% ==============================================================================
+% TABLO 6.2
+% ==============================================================================
 \begin{table}[htbp]
 \centering
+\small
+\setlength{\tabcolsep}{6pt}
 \caption{Conceptual comparison between centralized and decentralized fault-coordination architectures.}
 \label{tab:centralized_vs_decentralized_fault}
-\begin{tabular}{@{}lll@{}}
+\begin{tabularx}{\textwidth}{@{}l L L@{}}
 \toprule
 \textbf{Evaluation Metric} & \textbf{Centralized Master Architecture} & \textbf{Decentralized P2P Architecture (This Work)} \\ \midrule
-Single Point of Failure & Critical (Master server crash halts fleet) & None (Distributed edge coordination) \\
-Detection Latency & Low under reliable connectivity & Bounded by $T_{\text{timeout}} = 5.0\,\text{s}$ \\
-Network Scaling Overhead & $O(N)$ direct server links & $O(N^2)$ full mesh status subscriptions \\
-State Consistency & Enforced globally by master node & Converges via monotonic set operations \\
+Single Point of Failure & Critical (Master server crash halts fleet) & None (Distributed edge coordination) \\ \addlinespace
+Detection Latency & Low under reliable connectivity & Bounded by $T_{\text{timeout}} = 5.0\,\text{s}$ \\ \addlinespace
+Network Scaling Overhead & $\mathcal{O}(N)$ direct server links & $\mathcal{O}(N^2)$ full mesh status subscriptions \\ \addlinespace
+State Consistency & Enforced globally by master node & Converges via monotonic set operations \\ \addlinespace
 Robustness to Wireless Fading & Vulnerable (Server disconnect halts agents) & High (Autonomous local edge execution) \\ \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
+% ==============================================================================
+% TABLO 6.3
+% ==============================================================================
 \begin{table}[htbp]
 \centering
+\small
+\setlength{\tabcolsep}{6pt}
 \caption{Qualitative computational complexity and architectural comparison of redundant edge classifiers.}
 \label{tab:edge_classifier_comparison}
-\begin{tabular}{@{}lll@{}}
+\begin{tabularx}{\textwidth}{@{}l L L@{}}
 \toprule
 \textbf{Metric} & \textbf{Primary Soft-Margin Linear SVM} & \textbf{Fallback Ensemble XGBoost} \\ \midrule
-Input Feature Dimension & $d_{\text{pca}} = 125$ dimensions & $d_{\text{pca}} = 125$ dimensions \\
-Asymptotic Complexity & $\mathcal{O}(d_{\text{pca}})$ linear projection & $\mathcal{O}(K \cdot D)$ tree ensemble traversal \\
-Algebraic Dependency & Dot product, hyperplane projection & Orthogonal split-decision thresholds \\
-Execution Time ($128 \times 128$) & $\approx 1.2\,\text{ms}$ (incl. feature pipeline) & $\le 5.0\,\text{ms}$ (expected bounded execution latency) \\
-Numerical Robustness & Sensitive to singular matrices / scales & Immune to matrix ill-conditioning \\
+Input Feature Dimension & $d_{\text{pca}} = 125$ dimensions & $d_{\text{pca}} = 125$ dimensions \\ \addlinespace
+Asymptotic Complexity & $\mathcal{O}(d_{\text{pca}})$ linear projection & $\mathcal{O}(K \cdot D)$ tree ensemble traversal \\ \addlinespace
+Algebraic Dependency & Dot product, hyperplane projection & Orthogonal split-decision thresholds \\ \addlinespace
+Execution Time ($128 \times 128$) & $\approx 1.2\,\text{ms}$ (incl. feature pipeline) & $\le 5.0\,\text{ms}$ (expected bounded execution latency) \\ \addlinespace
+Numerical Robustness & Sensitive to singular matrices / scales & Immune to matrix ill-conditioning \\ \addlinespace
 Visual Explainability (XAI) & Direct, closed-form back-projection & None (falls back to unannotated raw sensor view) \\ \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
