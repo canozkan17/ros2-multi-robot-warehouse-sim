@@ -10,7 +10,7 @@ The decentralized multi-robot system under study incurs both computational and p
 
 Consistent with the fleet's edge-processing architecture, our multi-robot system makes the non-Byzantine assumption, namely, that faulty robots do not publish any deceptive or altered messages over the communication network. Instead, the system focuses on detecting and responding to silent (fail-silent) and stopping (fail-stop) anomalies ~\cite{okumura2023fault}. Consider the spatial state of the $i$-th robot, $\mathbf{x}_i(t) = [x_i(t), y_i(t), \psi_i(t)]^T \in \text{SE}(2)$.
 
-A fail-silent manifestation corresponds to an abrupt failure of a robot's perception, decision-making, and communication components, depriving the other robots of the information about the failed robot's state:
+A fail-silent manifestation corresponds to an abrupt failure of a robot's perception, decision-making, and communication components, depriving the other robots of the information about the failed robot's state, as formalized in Equation~\eqref{eq:fail_silent_state}:
 \begin{equation} \lim_{\tau \to 0^+} \mathbf{x}_i(t + \tau) = \emptyset \label{eq:fail_silent_state} \end{equation}
 In practice, such a failure could be triggered by a sudden power loss or hardware malfunction that renders the robot's computer or communication module inoperational.
 
@@ -68,13 +68,13 @@ and updates its configuration matrix $\mathcal{M}_i$ in accordance with Eq.~\ref
 \begin{equation} \mathcal{R} \left( \mathcal{R} \left( \mathcal{M} \right) \right) = \mathcal{R}\left( \mathcal{M} \right) \label{eq:idempotency_proof} \end{equation}
 holds true for any two agents $a_i$ and $a_j$. In particular, it becomes possible to prevent redundant allocation attempts by maintaining a consistent view of failed peers. The same mechanism can be used to handle a sequence of consecutive failures, as described in more detail in Section 6.6.3. Specifically, the revised allocation matrix $\mathcal{M}'$ is computed afresh every time a new failure is detected, taking into account the remaining workload. This approach is sufficient to preserve consistency within the fleet's configuration.
 
-\section{Hierarchical State Recovery and Localization Stability}
+\section{Hierarchical State Recovery and Localization Stability}\label{sec:ch6_hierarchical_recovery}
 
 Robust mobile navigation in unconstrained warehouse environments requires maintaining accurate spatial state estimates of the robot's position on the global map. Sudden accelerations, wheel slippage on slippery concrete, and extended traversal of structurally similar shelving units may lead to imprecise localization updates, causing the global filter to drift away from the true robot pose~\cite{fox2003kld}. The two-stage hierarchical recovery procedure detailed below is used to recover from such events.
 
-\subsection{Covariance-Triggered Fault Identification \& The Cyber-Physical Costmap Margin Paradox}
+\subsection{Covariance-Triggered Fault Identification \& The Cyber-Physical Costmap Margin Paradox}\label{sec:ch6_margin_paradox}
 
-The localization fault identification procedure begins once the robot's covariance estimates report a decrease in the accuracy of the global pose tracking by the localization filter. The pose covariance matrix is monitored as:
+The localization fault identification procedure begins once the robot's covariance estimates report a decrease in the accuracy of the global pose tracking by the localization filter. The pose covariance matrix is monitored as $\mathbf{\Sigma}_p$ in Equation~\eqref{eq:amcl_covariance_matrix}:
 \begin{equation} \mathbf{\Sigma}_p = \begin{bmatrix} \sigma_{xx}^2 & \sigma_{xy}^2 & \sigma_{x\psi}^2 \\ \sigma_{yx}^2 & \sigma_{yy}^2 & \sigma_{y\psi}^2 \\ \sigma_{\psi x}^2 & \sigma_{\psi y}^2 & \sigma_{\psi\psi}^2 \end{bmatrix} \in \mathbb{R}^{3 \times 3} \label{eq:amcl_covariance_matrix} \end{equation}
 with diagonal entries representing the variance in meters of the position state in the map reference frame. The \texttt{amcl\_pose} covariance is subsequently used by the recovery module to formulate an isotropic measure of the localization uncertainty:
 \begin{equation} \sigma_{\text{amcl}} = \sqrt{\sigma_{xx}^2 + \sigma_{yy}^2} \label{eq:sigma_amcl_derivation} \end{equation}
@@ -244,7 +244,7 @@ which allows the robot to turn left $\gamma = +1$ on the first iteration and the
 \label{fig:stall_escape_workflow}
 \end{figure}
 
-\section{Reactive Parallel-Axis Coordinate Shifting under Spatial Occlusion}
+\section{Reactive Parallel-Axis Coordinate Shifting under Spatial Occlusion}\label{sec:ch6_pythagorean_shift}
 
 In a masterless multi-robot inspection paradigm, the vehicles must be able to navigate their environment while avoiding other robots. A failed agent presents a serious navigational challenge to the rest of the fleet, as collisions with a parked or crashed robot are detrimental to the mission progress. Whenever the robot encounters a condition that prevents it from continuing the inspection task (e.g., localization failure), the agent updates its status to \texttt{FAILED} and physically stops. As such, the failed robot becomes an obstacle whose presence may impede the progress of its peers.
 
@@ -329,7 +329,7 @@ If the shifted goal coordinate fails either Eq.~\ref{eq:boundary_validation_limi
 
 Given the possibility of workspace changes in the real-world warehouse domain, the inspection fleet should consider the persistent localization failure caused by novel obstacles. In particular, the structural damage, inventory pallet drop, and robot self-collision may lead to the permanent inaccessibility of certain inspection targets. This situation, in particular, defeats the purpose of the inspection task, since the fleet would start to waste energy on the futile navigation attempts. Hence, the inspection fleet implements a decentralized blacklist propagation mechanism across the active agents.
 
-\subsection{Two-Strike Local Deferral Counters and Temporal Obstacle Filtering}
+\subsection{Two-Strike Local Deferral Counters and Temporal Obstacle Filtering}\label{sec:ch6_two_strike}
 
 Whenever the robot fails to approach the inspection waypoint due to the local costmap inflation or physical collision, it should not immediately give up on the target. Most common causes for the approach failure are the temporal workspace occupation by people or other robots. For this reason, the inspection fleet implements a local deferral counter to avoid premature target abandonment.
 
@@ -345,7 +345,7 @@ W_{\text{limit}, i}(t^+) = W_{\text{limit}, i}(t) - \lvert\mathcal{P}_{s_k}\rver
 \end{equation}
 In such a manner, the decreased target limit prevents the agent from getting stuck in an endless cycle of failed attempts to reach a particular target. This way, by dynamically adjusting the target limit in accordance with the current occupancy of the workspace, the decentralized FSM can safely transition to the \texttt{IDLE} state and return to spawn once the task is complete, thus fulfilling the condition of global convergence~\cite{colledanchise2018behavior}.
 
-\subsection{Peer-to-Peer Blacklist Monotonicity and Propagation Dynamics}
+\subsection{Peer-to-Peer Blacklist Monotonicity and Propagation Dynamics\label{sec:ch6_blacklist}}
 
 After the inspection agent $a_i$ blacklists the target $p_k$, it ought to propagate this decision to the rest of the fleet. In particular, the local blacklist registry of the agent $a_i$ may be represented as $\mathcal{B}_i \subset \mathcal{P}$. Given the masterless nature of the fleet, other agents should update their local registries in response to this event.
 
@@ -380,7 +380,7 @@ The reason for this design choice stems from the inability to synchronize the re
 
 This synchronization would impose a distributed consensus mechanism on the inspection fleet. In particular, every individual attempt to inspect the target $p_k$ would have to emit an event notifying the fleet of the attempt, thereby updating the attempt counter for all agents. In practice, such an approach would severely burden the network traffic of the edge processors, thus degrading the fleet's real-time performance. By implication, the inspection fleet sacrifices the ability to perform the fleet-wide attempt aggregation in favor of maintaining the statelessness of the individual agents.
 
-\section{Battery-Proportional Decentralized Workload Re-Allocation}
+\section{Battery-Proportional Decentralized Workload Re-Allocation}\label{sec:ch6_battery_realloc}
 
 The catastrophic failure or disconnection of an active agent reduces the fleet size and redistributes the surviving robots' workloads. To avoid energy depletion of the surviving agents, the task re-allocation algorithm described below re-binds remaining targets to active agents proportionally to their battery levels.
 

@@ -1,0 +1,91 @@
+\chapter*{Notation and Terminology}
+\addcontentsline{toc}{chapter}{Notation and Terminology}
+\markboth{Notation and Terminology}{Notation and Terminology}
+
+This thesis introduces several system-specific mechanisms that do not correspond to an established term in the multi-robot coordination literature. Table~\ref{tab:notation_terminology} lists each such term together with a one-sentence definition and the section in which it is first introduced. Table~\ref{tab:notation_abbreviations} lists the abbreviations used throughout the thesis in alphabetical order.
+
+\begin{longtable}{@{}p{0.28\textwidth}p{0.52\textwidth}p{0.15\textwidth}@{}}
+\caption{Thesis-specific terminology, one-sentence definitions, and first point of appearance.}
+\label{tab:notation_terminology} \\
+\toprule
+\textbf{Term} & \textbf{Definition} & \textbf{First Appears} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Term} & \textbf{Definition} & \textbf{First Appears} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r}{\textit{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+Same-Side-Lock / Same-Item Priority Sweep & Deterministic ordering rule requiring a robot to exhaust all uninspected sections of its current shelf side, then all sides of its current item, before any other target is considered. & \autoref{sec:ch1_contributions} \\
+UAV Proxy Paradigm & Time-based dwell state substituting for physical vertical translation, letting a ground robot emulate an orthogonal camera viewpoint on tall shelving without an aerial or lift mechanism. & \autoref{sec:ch4_uav_proxy} \\
+Mobile Cluster & Virtual aggregate entity formed from the averaged centroids of the three individually-tracked mobile pallets, used to avoid redundant per-pallet waypoints and inter-robot collisions. & \autoref{sec:ch4_mobile_cluster} \\
+Spatial Mutex (Corridor Claim Protocol) & Peer-to-peer, TTL-leased mutual exclusion scheme granting one robot at a time exclusive occupancy of a narrow aisle, without a central lock server. & \autoref{sec:ch5_spatial_mutex} \\
+Asymmetric Race-Condition Resolution (LCFS Overwrite) & Practical substitute for the timestamp-and-identifier tie-breaking relation, whereby the most recently received claim packet unconditionally overwrites the local lock registry. & \autoref{sec:ch5_race_resolution} \\
+Steel-Column Structural Bypass & Fixed-offset correction relocating Section~C's approach coordinate on two big-shelf faces to $Y = -13.50\,\text{m}$, clearing the inflation radius of a structural warehouse column. & \autoref{sec:ch5_steel_bypass} \\
+Orientation-Driven (Dead-End Wall) Sweeping & Physics-informed reversal of a shelf's section-visiting order near the eastern and northern perimeter walls, preventing the robot from being driven into a corner at the end of a sweep. & \autoref{sec:ch5_deadend_sweep} \\
+Hierarchical Two-Stage AMCL Recovery & Escalating localization-recovery ladder that attempts an in-place local spin before falling back to full global particle-filter reinitialization. & \autoref{sec:ch6_hierarchical_recovery} \\
+Cyber-Physical Costmap Margin Paradox & The tension whereby relaxing the AMCL covariance gate to reduce nuisance recovery triggers simultaneously narrows the probabilistic safety margin against the local costmap's inflation boundary. & \autoref{sec:ch6_margin_paradox} \\
+Pythagorean Parallel-Axis Coordinate Shifting & Reactive relocation of an inspection waypoint along the shelf-parallel axis, computed from the Pythagorean relation between a failed peer's occlusion radius and the perpendicular offset, to preserve line of sight around the stalled robot. & \autoref{sec:ch6_pythagorean_shift} \\
+Two-Strike Blacklist Propagation & Fleet-wide broadcast permanently excluding a shelf side from the task pool once a single robot has failed to approach it twice. & \autoref{sec:ch6_two_strike} \\
+Battery-Proportional Decentralized Workload Re-Allocation & One-shot redistribution of a failed robot's unfinished targets among survivors, split in proportion to each survivor's remaining state of charge. & \autoref{sec:ch6_battery_realloc} \\
+Gate-Based Deterministic Launch Architecture & Readiness-polling launch sequencing (world, clock, topic, and lifecycle gates) chained via \texttt{OnProcessExit} handlers in place of fixed-duration timer delays. & \autoref{sec:ch7_gate_primitives} \\
+
+\end{longtable}
+
+\begin{longtable}{@{}p{0.18\textwidth}p{0.77\textwidth}@{}}
+\caption{Abbreviations used throughout the thesis.}
+\label{tab:notation_abbreviations} \\
+\toprule
+\textbf{Abbreviation} & \textbf{Full Form} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Abbreviation} & \textbf{Full Form} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{2}{r}{\textit{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+AMCL & Adaptive Monte Carlo Localization \\
+BT & Behavior Tree \\
+CL & Coverage Loss \\
+CNN & Convolutional Neural Network \\
+DDS & Data Distribution Service \\
+DWA & Dynamic Window Approach \\
+EKF & Extended Kalman Filter \\
+FSM & Finite State Machine \\
+FTL & Failure-to-Reallocation Latency \\
+HOG & Histogram of Oriented Gradients \\
+IMU & Inertial Measurement Unit \\
+KLD & Kullback--Leibler Divergence \\
+LBP & Local Binary Pattern \\
+LCFS & Last-Come-First-Served \\
+MRTA & Multi-Robot Task Allocation \\
+Nav2 & Navigation2 (ROS~2 navigation stack) \\
+PCA & Principal Component Analysis \\
+QoS & Quality of Service \\
+ROS~2 & Robot Operating System~2 \\
+RPP & Regulated Pure Pursuit \\
+SDF & Simulation Description Format \\
+SLAM & Simultaneous Localization and Mapping \\
+SoC & State of Charge \\
+SPOF & Single Point of Failure \\
+SVM & Support Vector Machine \\
+TAT & Total Audit Time \\
+TF & Transform (ROS~2 \texttt{tf2} library) \\
+TTL & Time-To-Live \\
+URDF & Unified Robot Description Format \\
+WCET & Worst-Case Execution Time \\
+WSL2 & Windows Subsystem for Linux~2 \\
+XAI & Explainable Artificial Intelligence \\
+XGBoost & eXtreme Gradient Boosting \\
+
+\end{longtable}

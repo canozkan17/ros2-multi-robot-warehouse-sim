@@ -29,7 +29,7 @@ with the constant term accounting for the baseline power consumption by the on-b
 \begin{equation}
 \mathcal{T}_{\text{AMCL}} = \{ t_0, t_1, t_2, \dots, t_N \} \label{eq:amcl_time_set}
 \end{equation}
-Given the sequence of updates, the state vector of the system at the $k$-th update period $t_k \in \mathcal{T}_{\text{AMCL}}$ is represented as a planar position vector:
+Given the sequence of updates, the state vector of the system at the $k$-th update period $t_k \in \mathcal{T}_{\text{AMCL}}$ is represented as the planar position vector in Equation~\eqref{eq:amcl_pose_vector}:
 \begin{equation}
 \mathbf{x}_k = [x_k, y_k]^T \in \mathbb{R}^2 \label{eq:amcl_pose_vector}
 \end{equation}
@@ -57,7 +57,7 @@ which ensures that the step size does not exceed $\delta_{\text{warp}} = 5.0\tex
 
 While this discrete-time representation mathematically characterizes the energy states at major decision epochs, the onboard battery monitoring module implements this formulation via decoupled tracking threads. Specifically, the static idle decay term is evaluated continuously on a fixed $10\,\text{Hz}$ local telemetry control loop, whereas the dynamic mileage integration accumulates discrete displacement steps between consecutive estimator publications, ensuring that micro-movements are continuously accumulated. For the particular choice of the robot platform, the value of $\lambda_{\text{idle}}$ was set to induce a linear discharge of $0.02\,\%\,\text{s}^{-1}$ during idle periods, corresponding to approximately 0.002\% capacity loss per $10\,\text{Hz}$ control loop iteration. Furthermore, the dynamic component of the hybrid discharge model was calibrated with the coefficient $\eta_{\text{dynamic}} = 0.15\,\%\,\text{m}^{-1}$ to account for the effective current draw characteristics of the drivetrain on the concrete floor of the warehouse facility. By virtue of the simplified parametrization, the computation of the hybrid discharge model is performed at the battery management level with minimal overhead, thus bypassing the substantial CPU and memory overhead of the raw telemetry parsing and message unpacking at the high update rates.
 
-\section{Spatial Mutex Mechanics and Peer-to-Peer DDS Coordination}
+\section{Spatial Mutex Mechanics and Peer-to-Peer DDS Coordination}\label{sec:ch5_spatial_mutex}
 
 \subsection{DDS Transport Contract Formulations and QoS Robustness}
 
@@ -77,7 +77,7 @@ To avoid the spatial deadlocks of the narrow transit zones, the workspace is div
 
 Further, the same principle is applied to the small shelf storage area to define 9 narrow aisles between the facing y-faces of the small shelves, distributed across three distinct structural columns. On the western column of small shelves, the top narrow aisle is between \texttt{shelf\_2\_yminus} and \texttt{shelf\_1\_yplus}, the middle narrow aisle is between \texttt{shelf\_1\_yminus} and \texttt{\seqsplit{shelf\_0\_yplus}}, and the bottom narrow aisle is between \texttt{shelf\_0\_yminus} and \texttt{\seqsplit{shelf\_yplus}}. Similarly, on the eastern column of small shelves, the top narrow aisle is between \texttt{shelf\_3\_yminus} and \texttt{shelf\_4\_yplus}, the middle narrow aisle is between \texttt{shelf\_4\_yminus} and \texttt{shelf\_6\_yplus}, and the bottom narrow aisle is between \texttt{shelf\_6\_yminus} and \texttt{\seqsplit{shelf\_5\_yplus}}. Finally, on the southeast corner column of small shelves, the top narrow aisle is located between \texttt{shelf\_10\_yminus} and \texttt{shelf\_9\_yplus}, the middle narrow aisle is between \texttt{shelf\_9\_yminus} and \texttt{shelf\_8\_yplus}, and the bottom narrow aisle is established between \texttt{shelf\_8\_yminus} and \texttt{shelf\_7\_yplus}. The coordination module mutually excludes all narrow aisles for the robotic fleet. This way, the local mutual exclusion primitive of the P2P navigation is applied to the entire length of every narrow aisle, which successfully avoids the spatial deadlocks of the narrow transit zones \cite{ricart1981optimal}. The global physical constants, shelving dimensions, and narrow aisle mutual exclusion mappings governing this spatial partition are compiled in Appendix~\ref{app:code_config} (Listing~\ref{lst:config_blueprints_core}).
 
-\subsection{Peer-to-Peer Claims Protocol and Lease Mechanics}
+\subsection{Peer-to-Peer Claims Protocol and Lease Mechanics\label{sec:ch5_claims}}
 
 The coordination of the entry into narrow corridor segments follows the asynchronous distributed state broadcasts mechanism. Instead of having a single coordinator regulating the claims procedure, each agent individually keeps track of the relevant information. To check whether a target segment is available to the current evaluating agent, a Boolean product formula is used to determine the overall segment's availability for use. Given an arbitrary corridor segment, its availability for use by an evaluating agent at a particular moment is defined using the Boolean product formula:
 \begin{equation}
@@ -93,14 +93,21 @@ t_{\text{expire}, j} = t_{\text{stamp}, j} + \tau_{\text{lease}} \label{eq:lease
 \end{equation}
 where the default value during normal operations is set to $\tau_{\text{lease}} = 6.0\,\text{s}$. Note that to sustain the lease while waiting for tracking and inspection procedures, an active claiming agent needs to renew the lease by sending updated lease information to the fleet's communication infrastructure. The parameter governing the time interval between the consecutive renewal messages is set to $T_{\text{renew}} = 1.5\,\text{s}$. The deadline time is moved to a new value specified by Equation \ref{eq:lease_expiration_time}, thus preventing the corridor segment from being released while the claiming agent sustains the lease \cite{ghamdi2025opinion}. If the lease renewal procedure is not followed, the indicator function drops to zero, and the product formulation given by Equation \ref{eq:spatial_availability_check} evaluates to unity, automatically restoring the segment's availability for the fleet's other agents.
 
-\subsection{Asymmetric Race-Condition Resolution}
+\subsection{Asymmetric Race-Condition Resolution}\label{sec:ch5_race_resolution}
 
 To resolve simultaneous claim packets in the asynchronous distributed architecture, we define the tie-breaking priority relation:
 \begin{equation}
 \thinmuskip=1mu\medmuskip=2mu\thickmuskip=2mu
 (t_{\text{stamp}, i}, \; \text{ID}_i) \prec (t_{\text{stamp}, j}, \; \text{ID}_j) \iff \left( t_{\text{stamp}, i} < t_{\text{stamp}, j} \right) \lor \left( (t_{\text{stamp}, i} = t_{\text{stamp}, j}) \land (\text{ID}_i < \text{ID}_j) \right) \label{eq:asymmetric_precedence}
 \end{equation}
-which imposes a linear ordering of the packets by their arrival time and agent-specific identifier. Practically however, it is impossible to enforce such ordering on the edge due to serialization overhead on the network. The physical peer-to-peer stack uses a stateless local runtime coordination mechanism, which leverages LCFS (Last-Come-First-Served) lease preemption. By doing so, incoming lease updates can preemptively overwrite local lock registries~\cite{coskun2021deadlock}, which ultimately impacts the timestamp measurements recorded in \texttt{anomaly\_latency.csv}, obviating the need to maintain a queue at the edge that would serialize updates on the planar manifold, conserving critical edge compute cycles and reducing coordination induced latency(see Figure~\ref{fig:corridor_lease_sequence}.). The complete Python operationalization of this lease-renewal cycle, LCFS overwrite arbitration, and blacklist propagation logic is implemented within the \texttt{ClaimManager} class, as compiled in Appendix~\ref{app:code_claim_manager} (Listing~\ref{lst:claim_manager_core}).
+which imposes a linear ordering of the packets by their arrival time and agent-specific identifier. Practically however, it is impossible to enforce such ordering on the edge due to serialization overhead on the network. The physical peer-to-peer stack uses a stateless local runtime coordination mechanism, which leverages LCFS (Last-Come-First-Served) lease preemption. By doing so, incoming lease updates can preemptively overwrite local lock registries~\cite{coskun2021deadlock}, which ultimately impacts the timestamp measurements recorded in \texttt{anomaly\_latency.csv}, obviating the need to maintain a queue at the edge that would serialize updates on the planar manifold, conserving critical edge compute cycles and reducing coordination induced latency(see Figure~\ref{fig:corridor_lease_sequence}.). The complete Python operationalization of this lease-renewal cycle, LCFS overwrite arbitration, and blacklist propagation logic is implemented within the \texttt{ClaimManager} class, as compiled in Appendix~\ref{app:code_claim_manager} (Listing~\ref{lst:claim_manager_core}). Figure~\ref{fig:ch5_claim_terminal} shows the resulting claim registry as reported by the passive diagnostic terminal during an active mission, listing the side-key currently locked by each of the three agents alongside the fleet-wide progress summary.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{fig_5_2_5_diagnosis_claim_view}
+\caption{Terminal output of \texttt{system\_diagnosis} showing the active corridor claims held by \texttt{robot1}, \texttt{robot2}, and \texttt{robot3} at a given mission timestamp, together with per-robot pose, battery, and completed-waypoint telemetry.}
+\label{fig:ch5_claim_terminal}
+\end{figure}
 
 \begin{figure}[htbp]
 \centering
@@ -157,7 +164,7 @@ which enables the computation of the compound homogeneous transform representing
 \end{equation}
 By formulating the homogeneous transformations for local offset, rotation, and robot-specific transformation in this manner, the spatial parser node guarantees kinematic compatibility of the subsequent approach pose and camera transform calculations relative to the non-holonomic constraints of the agents. The software routines executing these planar matrix operations, including the CAD origin offset transformations and local-to-global frame mappings, are defined in the SDF geometry engine detailed in Appendix~\ref{app:code_sdf_parser} (Listing~\ref{lst:sdf_transform_core}).
 
-\subsection{Parametric Approach Pose Generation and Steel-Column Structural Bypass}
+\subsection{Parametric Approach Pose Generation and Steel-Column Structural Bypass}\label{sec:ch5_steel_bypass}
 
 To allow the vehicle's visual perception system to capture the necessary visual data, the robot must approach the target shelf at a sufficient distance $D_{\text{approach}} = 1.20\,\text{m}$ normal to its longitudinal inspection face. For small shelf instances (horizontal sweeping), this offset is determined by the model's depth parameter, yielding $D_{\text{offset}} = \frac{\text{depth}}{2} + D_{\text{approach}} = \frac{0.6}{2} + 1.2 = 1.50\,\text{m}$. The inspection waypoints are distributed along the longitudinal axis, with local division steps defined as $\Delta x_{\text{local, i}} = -1.35 + (i \cdot 0.9)$ for $i \in \{0, 1, 2, 3\}$. The global inspection target coordinate vector $\mathbf{q}_{\text{small}, i} = [gx_{s, i}, gy_{s, i}]^T$ is resolved by applying the rigid-body transformation:
 
@@ -197,7 +204,16 @@ Although most of the inventory units allowed the symmetric approach to the inspe
 \begin{equation}
 1.81\,\text{m} \label{eq:standard_pallet_offset}
 \end{equation}
-from the positive side. Indeed, such a displacement would require the robot to finalize its approach to the inspection section within the inflated collision area of the warehouse's wall. To ensure a collision-free approach to the inventory unit while maintaining the robot's viewpoint normal to the inspection section, the coordinate estimator utilized a modified inspection approach. In particular, while the robot maintained the standard approach offset of $1.81\,\text{m}$ from the negative side, the positive-side approach was redirected with an orthogonal standing offset of: 1.60 m. To maintain strict alignment with the physical configuration space of the fleet, this displacement is calculated as a sum of the half pallet width of 0.40 m (derived from the full model width of 0.80 m defined in the configuration specs) and the nominal approach clearance of 1.20 m, yielding exactly the required 1.60 m clearance. As a result, the approach waypoint provided an unobstructed inspection vector $(x_{\text{approach}}, y_{\text{approach}})$ with an orthogonal viewpoint for the visual inventory check.(Figure~\ref{fig:sdf_waypoint_pipeline} summarizes this transformation chain.) The exact algorithmic implementation of this structural bypass rule, along with the parametric section partitioning for retail and industrial shelving units, is provided in Appendix~\ref{app:code_sdf_parser} (Listing~\ref{lst:sdf_shelving_core}).
+from the positive side. Indeed, such a displacement would require the robot to finalize its approach to the inspection section within the inflated collision area of the warehouse's wall. To ensure a collision-free approach to the inventory unit while maintaining the robot's viewpoint normal to the inspection section, the coordinate estimator utilized a modified inspection approach. In particular, while the robot maintained the standard approach offset of $1.81\,\text{m}$ from the negative side, the positive-side approach was redirected with an orthogonal standing offset of: 1.60 m. To maintain strict alignment with the physical configuration space of the fleet, this displacement is calculated as a sum of the half pallet width of 0.40 m (derived from the full model width of 0.80 m defined in the configuration specs) and the nominal approach clearance of 1.20 m, yielding exactly the required 1.60 m clearance. As a result, the approach waypoint provided an unobstructed inspection vector $(x_{\text{approach}}, y_{\text{approach}})$ with an orthogonal viewpoint for the visual inventory check.(Figure~\ref{fig:sdf_waypoint_pipeline} summarizes this transformation chain.) The exact algorithmic implementation of this structural bypass rule, along with the parametric section partitioning for retail and industrial shelving units, is provided in Appendix~\ref{app:code_sdf_parser} (Listing~\ref{lst:sdf_shelving_core}). Figure~\ref{fig:ch5_first_shelf_routes} shows the resulting global plan produced by the runtime SDF parser for one such approach, superimposed on the AMCL-tracked pose and local costmap of the requesting agent inside RViz2.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{fig_5_3_3_rviz2_first_shelf_routes.pdf}
+\caption{RViz2 visualization of a global path computed toward a dynamically parsed approach waypoint on \texttt{shelf\_2}, confirming that the coordinates generated by \texttt{sdf\_parser.py} resolve to a reachable, collision-free target inside the live navigation stack.}
+\label{fig:ch5_first_shelf_routes}
+\end{figure}
+
+
 
 \begin{figure}[htbp]
 \centering
@@ -231,7 +247,7 @@ Using this simplification, the rotation-free projection becomes possible, effect
 
 where $\delta_s \in \{-1, 1\}$ becomes a directional sign coefficient depending on the target face, while $D_{\text{approach}} = 1.2\,\text{m}$ defines the standard approach distance in a perpendicular direction. The simplified projection follows the same pattern as the shelf inventory, creating a sweeping lane coordinate frame. Notably, the dynamic inventory approach poses are removed from the global costmap queue once resolved. This step is essential to prevent the global path planning algorithm from treating active inspection targets as impassable barriers
 
-\subsection{Orientation-Driven Sweeping for Dead-End Wall Mitigation}
+\subsection{Orientation-Driven Sweeping for Dead-End Wall Mitigation}\label{sec:ch5_deadend_sweep}
 
 Calculating the sectional approach waypoints in a parametric manner can cause severe motion planning issues near the physical boundaries of the simulation domain. For example, the concrete walls on the eastern ($X \ge 10.0\,\text{m}$) and northern ($Y \ge 15.0\,\text{m}$) edges of the environment restrict the robot's movements, forcing it to perform complex rotational movements when completing the last sweep section in order to retreat from proximity to the walls.
 
@@ -254,7 +270,7 @@ The target sequence is reversed before being fed into the navigation framework t
 
 \subsection{Non-Holonomic Kinematic Constraints and Chassis Jacobian}
 
-To make sure that the motion planning algorithms are generating parametrized trajectories that can actually be physically tracked by the fleet agents, it becomes necessary to bake in the constraints imposed by the differential chassis of the robots. The robotic footprint is modeled as a non-holonomic rigid body on a rigid floor plane corresponding to the warehouse floor while the no-lateral-slip condition holds true for wheel-ground contact patches. The no-lateral-slip condition, which prevents translation of the chassis perpendicular to the robot's longitudinal axis, is expressed as:
+To make sure that the motion planning algorithms are generating parametrized trajectories that can actually be physically tracked by the fleet agents, it becomes necessary to bake in the constraints imposed by the differential chassis of the robots. The robotic footprint is modeled as a non-holonomic rigid body on a rigid floor plane corresponding to the warehouse floor while the no-lateral-slip condition holds true for wheel-ground contact patches. The no-lateral-slip condition, which prevents translation of the chassis perpendicular to the robot's longitudinal axis, is expressed in Equation~\eqref{eq:non_holonomic_constraint}:
 \begin{equation}
 \dot{x}\sin\psi - \dot{y}\cos\psi = 0 \label{eq:non_holonomic_constraint}
 \end{equation}
@@ -523,7 +539,14 @@ in a linear blending operation that produces the final XAI visualization:
 \begin{equation}
 I_{\text{XAI}}(x,y) = (1 - \alpha_{\text{blend}}) \cdot I_{\text{gray, BGR}}(x,y) + \alpha_{\text{blend}} \cdot I_{\text{JetMap}}(x,y) \label{eq:alpha_blending}
 \end{equation}
-where the blending coefficient alpha is set to $\alpha_{\text{blend}} = 0.35$. Notably, the full feature-space attribution pipeline runs on the robotic edge vision system in only 1.2 ms, thus enabling real-time attention-aware robotic box inspection.(The complete pipeline, from raw frame to XAI overlay, is depicted in Figure~\ref{fig:perception_xai_pipeline}.) The mathematical back-projection pipeline converting SVM hyperplanes into $4 \times 4$ spatial grid attributions and colormap overlays is programmatically realized in Appendix~\ref{app:code_xai} (Listing~\ref{lst:xai_backproject_core}).
+where the blending coefficient alpha is set to $\alpha_{\text{blend}} = 0.35$. Notably, the full feature-space attribution pipeline runs on the robotic edge vision system in only 1.2 ms, thus enabling real-time attention-aware robotic box inspection.(The complete pipeline, from raw frame to XAI overlay, is depicted in Figure~\ref{fig:perception_xai_pipeline}.) The mathematical back-projection pipeline converting SVM hyperplanes into $4 \times 4$ spatial grid attributions and colormap overlays is programmatically realized in Appendix~\ref{app:code_xai} (Listing~\ref{lst:xai_backproject_core}). Figure~\ref{fig:ch5_xai_live} shows this overlay as rendered live inside the operator dashboard during an active anomaly classification event, confirming that the closed-form projection of Equation~\ref{eq:alpha_blending} executes within the perception thread without visibly interrupting the camera stream.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.55\textwidth]{fig_5_6_3_ui_fault_detection.pdf}
+\caption{Operator dashboard displaying a live JET-colormap XAI overlay on the \texttt{robot3} camera feed following a \texttt{damaged} classification, alongside the corresponding anomaly alert entry in the system log.}
+\label{fig:ch5_xai_live}
+\end{figure}
 
 \begin{figure}[htbp]
 \centering

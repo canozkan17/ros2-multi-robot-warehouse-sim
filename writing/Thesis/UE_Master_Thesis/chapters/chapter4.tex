@@ -5,29 +5,42 @@ This chapter provides the system-level context and problem formulation for the t
 
 \section{Global Mission Context: Warehouse Logistics and Corridor Constraints}
 
+Table~\ref{tab:lit_review_comparison} concluded the preceding chapter with ten specific deltas between the surveyed literature and the system under investigation; the current one addresses each of these discrepancies as a particular design commitment. Given Chakraa et al.\ and Quinton et al.'s findings on auction-based and optimization-based task allocation mechanisms' limited scalability and communication assumptions \cite{chakraa2023optimization,quinton2023market} and Agrawal et al.'s DC-MRTA's increased computational complexity due to its coupling with traffic-aware navigation \cite{agrawal2022dcmrta}, the disjoint task partition $\mathcal{T}_i(t) \subset \mathcal{P}$ formalized later in this section (Eq.~\eqref{eq:ch4_coverage_partition}) is instead addressed by a static, near-costless cardinal sweep, as described in Section~5.3. Similarly, Sharma et al.'s dynamically re-partitioned DARP regions \cite{sharma2026darp} are replaced, for the fleet $\mathcal{A}$ (Eq.~\eqref{eq:ch4_fleet}), with a fixed \texttt{owned\_regions} assignment established at deployment (Section~5.3.1), the losses of parallelism for which will be empirically quantified in Chapter~8. The narrow-aisle bottleneck formally characterized later in this section is another area of reduced complexity: the formally verified reservation graphs and token circulation mechanisms of Grover et al., Pratissoli et al., He et al., and Parihar and Chakraborty \cite{grover2023deadlock,pratissoli2024hierarchical,he2023deadlock,parihar2022token,lee2025optimizing} are instead addressed by a simplified, unverified TTL-leasing and LCFS-overwriting peer broadcasting mechanism described in Section~5.2. Fault detection adheres to a similar paradigm of reduced autonomy. Lee et al.\ and Bossens et al.\ both recommend continuously tracking the behavior model of a robot navigating its task \cite{lee2022datadriven,bossens2022resilient}; the fail-stop threshold $E_{\text{fail}} = 0.0\,\%$ introduced in Section~4.2.4 below is instead watched over by two discrete channels: the self-declaration watchdog and the heartbeat timeout mechanism of Section~6.1, neither of which attempts behavioral inference on a robot unless contact has already been lost. Reallocation similarly favors simplicity: the continuously reoptimized reward vectors of Mayya et al.'s MRTA and Gong et al.'s clustered, locally updated multi-robot planning \cite{mayya2021resilient,gong2024resilient} are replaced, for the single-fleet setting, with a deterministic, battery-proportional split (Section~6.6), triggered strictly per confirmed failure instead of being recomputed on a rolling schedule. Localization recovery narrows Shi et al.'s visual auxiliary positioning \cite{shi2022vision} and the particle filter maintenance procedure reviewed by Macenski et al.\ \cite{macenski2023fromdesks} to the covariance-gated two-stage spinning and resetting procedure of Section~6.2, which waits for divergence rather than forestalling it. The same localization failure response channel enables the same fail-stop commitment to be exercised across the fleet to address the energy-aware allocation gap: Notomista et al.\ and Djenadi and Mendil\ both recommend optimizing charge-preserving trajectories assuming the fleet robots have a return-to-dock opportunity \cite{notomista2022resilient,djenadi2022energyaware}, which Section~4.2.4 explicitly rejects---leaving Sections~6.1.1 and~6.6 to handle total battery exhaustion as an expected outcome rather than a condition to navigate around. The perception stack is the only aspect of this system that differs from the comparison literature due to practical rather than conceptual reasons. Contrary to the CNN and transformer-based defect classifiers, accelerator-dependent processing pipelines, and 3D scans from physical UAVs reviewed by Hussain and Hill, Sen et al., Benmachiche et al., and Tsiakas et al.\ \cite{hussain2023custom,sen2025feature,benmachiche2026realtime,tsiakas2024autonomous}, the handcrafted LBP/HOG-plus-linear-SVM pipeline reviewed in Section~5.5 is constrained to the CPU resources of the WSL2 host, a design choice that will be further qualified in this chapter through the sensor and UAV-specific constraints outlined in Sections~4.2.3 and~4.3. Explainability is a direct result of the perception stack's reduced autonomy: Section~6.7's closed-form back-projection and untested SVM/XGBoost fallback step around the model-agnostic post-hoc explanation techniques reviewed by Sakai and Nagai\ and Myllyaho et al.\ \cite{sakai2022explainable,myllyaho2022misbehaviour}, offering lower runtime costs at the expense of generality---a trade-off Chapter~8 re-examines directly. Finally, the general-purpose ROS~2 benchmarking platforms and default path tracking controllers reviewed by Macenski et al.\ and Shcherbyna et al.\ \cite{macenski2023fromdesks,shcherbyna2024arena,macenski2023regulated} are replaced, in Section~7.2 and the simulation substrate described in Section~4.4 below, with a custom, gate-based readiness polling system; this chapter's contribution was to identify the specific requirements a three-robot fleet simulation had to impose on a shared host rather than build upon the existing research aiming to generalize across arbitrary multi-robot settings. None of these ten design choices are presented as improvements over the state-of-the-art methods they are motivated by; rather, they are formulated as implementation realities to be acknowledged before moving onto evaluating the empirical performance of the system under the constraints defined by it, the subject of Chapter~8.
+
 A critical task of any cyber-physical logistics facility is the inventory auditing procedure, which requires a systematic examination of the stored items. This process usually involves either the manual counting of the objects by human workers or the automated analysis of a visual scan of a large-scale inventory storage area. Both methods involve substantial safety, time cost, and human labor expenditures, especially when examining targets located on large high-rise shelves. Autonomous robotic platforms offer tremendous promise for such logistics tasks, but the use of decentralized multi-robot coalitions introduces substantial additional spatial coordination challenges.
 
-The physical warehouse environment used as the basis for this research was designed to resemble a realistic logistics facility. The workspace consists of several structural pillars, dynamic loading docks, and multiple rows of storage shelves and pallets, which were placed to host inventory targets. In particular, to assign the robots global navigation waypoints, the warehouse workspace was represented as a bounded 2D space:
+The physical warehouse environment used as the basis for this research was designed to resemble a realistic logistics facility. The workspace consists of several structural pillars, dynamic loading docks, and multiple rows of storage shelves and pallets, which were placed to host inventory targets. In particular, to assign the robots global navigation waypoints, the warehouse workspace was represented as a bounded 2D space, as defined in Equation~\eqref{eq:ch4_workspace}:
 
 \begin{equation}
-\mathcal{W} = [X_{\min}, X_{\max}] \times [Y_{\min}, Y_{\max}] \subset \mathbb{R}^2
+\mathcal{W} = [X_{\min}, X_{\max}] \times [Y_{\min}, Y_{\max}] \subset \mathbb{R}^2 \label{eq:ch4_workspace}
 \end{equation}
 
-where $\mathcal{O}$ is the set of obstacles defining the free workspace for robot motions, where elements $\mathcal{O}_i$ are members of the power set $\mathcal{P}(\mathcal{W})$:
+where $\mathcal{O}$ is the set of obstacles in Equation~\eqref{eq:ch4_obstacles} defining the free workspace for robot motions, where elements $\mathcal{O}_i$ are members of the power set $\mathcal{P}(\mathcal{W})$:
 
 \begin{equation}
-\mathcal{O} = \{ \mathcal{O}_1, \mathcal{O}_2, \dots, \mathcal{O}_M \} \subset \mathcal{P}(\mathcal{W})
+\mathcal{O} = \{ \mathcal{O}_1, \mathcal{O}_2, \dots, \mathcal{O}_M \} \subset \mathcal{P}(\mathcal{W}) \label{eq:ch4_obstacles}
 \end{equation}
 
-The resulting free workspace $\mathcal{W}_{\text{free}}$ available for navigation is defined as:
+The resulting free workspace $\mathcal{W}_{\text{free}}$ available for navigation is defined according to Equation~\eqref{eq:ch4_free_workspace}:
 
 \begin{equation}
-\mathcal{W}_{\text{free}} = \mathcal{W} \setminus \bigcup_{i=1}^{M} \mathcal{O}_i
+\mathcal{W}_{\text{free}} = \mathcal{W} \setminus \bigcup_{i=1}^{M} \mathcal{O}_i \label{eq:ch4_free_workspace}
 \end{equation}
 
 \subsection{Physical Workspace Description}
 
-The workspace consists of twenty-two large, small shelves, and pallets arranged in a manner to represent high-density storage units.
+The workspace consists of twenty-two large, small shelves, and pallets arranged in a manner to represent high-density storage units. Figure~\ref{fig:ch4_warehouse_overview} contrasts this arrangement as rendered in the Gazebo Harmonic client, showing both the plan-view layout of the storage rows and the oblique perspective a TurtleBot3 Waffle unit encounters while traversing the central aisle.
+
+\begin{figure}[htbp]
+\centering
+\subcaptionbox{Plan-view of the warehouse layout, showing the twenty-two shelf and pallet units alongside the structural pillars.\label{fig:ch4_warehouse_top}}
+    {\includegraphics[width=0.47\textwidth]{fig_4_1_1_gazebo_world_top_view.pdf}}
+\hfill
+\subcaptionbox{Oblique ground-level perspective of the central aisle, corresponding to the viewpoint of an active agent.\label{fig:ch4_warehouse_back}}
+    {\includegraphics[width=0.47\textwidth]{fig_4_1_1_gazebo_world_back_view.pdf}}
+\caption{The simulated warehouse environment rendered in Gazebo Harmonic.}
+\label{fig:ch4_warehouse_overview}
+\end{figure}
 
 \subsubsection{Discretization of Storage Units into Inventory Cells}
 
@@ -81,7 +94,18 @@ rendering the narrow aisle a global coordination bottleneck for the multi-robot 
     \caption{Geometric configuration of a narrow aisle bottleneck, showing $W_{\text{aisle}}$ relative to $2 \cdot D_{\text{safe}}$.} 
     \label{fig:fig_4_1_corridor_bottleneck} 
 \end{figure}
-[figur 1] shows this effect for a generic narrow aisle navigation corridor.
+Figure~\ref{fig:fig_4_1_corridor_bottleneck} shows this effect for a generic narrow aisle navigation corridor. Figure~\ref{fig:ch4_narrow_aisle_physical} shows the same bottleneck as it occurs inside the simulated environment, with the robot occupying the greater part of the available lateral clearance while approaching a small-shelf inspection face.
+
+\begin{figure}[htbp]
+\centering
+\subcaptionbox{Approach view of a TurtleBot3 Waffle unit entering a narrow aisle between two facing small-shelf units.\label{fig:ch4_narrow_aisle_a}}
+    {\includegraphics[width=0.47\textwidth]{fig_4_1_2_narrow_aisle_1.pdf}}
+\hfill
+\subcaptionbox{The same aisle viewed from a closer vantage point, illustrating the residual clearance margin either side of the chassis.\label{fig:ch4_narrow_aisle_b}}
+    {\includegraphics[width=0.47\textwidth]{fig_4_1_2_narrow_aisle_2.pdf}}
+\caption{Physical realization of the narrow aisle bottleneck of Figure~\ref{fig:fig_4_1_corridor_bottleneck} inside the Gazebo simulation.}
+\label{fig:ch4_narrow_aisle_physical}
+\end{figure}
 
 \subsubsection{Interference With Building Pillars}
 
@@ -96,33 +120,33 @@ The total target set, $ |\mathcal{P}| = 142 $, is developed by enumerating the n
 
 \subsubsection{Multi-Agent Fleet Description}
 
-The robotic fleet consists of three homogeneous differential drive agents:
+The robotic fleet consists of three homogeneous differential drive agents, formalized as the set $\mathcal{A}$ in Equation~\eqref{eq:ch4_fleet}:
 
 \begin{equation}
-\mathcal{A} = \{ a_1, a_2, a_3 \}
+\mathcal{A} = \{ a_1, a_2, a_3 \} \label{eq:ch4_fleet}
 \end{equation}
 
-which operate in a fully decentralized manner. At any given moment $t$, the state of each active agent $a_i \in \mathcal{A}$ is defined by its pose in the free space $x_i(t) \in \mathcal{W}_{\text{free}}$. Collision avoidance between active physical frames is mathematically governed by the following clearance constraint:
+which operate in a fully decentralized manner. At any given moment $t$, the state of each active agent $a_i \in \mathcal{A}$ is defined by its pose in the free space $x_i(t) \in \mathcal{W}_{\text{free}}$. Collision avoidance between active physical frames is mathematically governed by the clearance constraint in Equation~\eqref{eq:ch4_collision_clearance}:
 
 \begin{equation}
-\text{For all } a_i, a_j \in \mathcal{A}, a_i \neq a_j: \quad \|x_i(t) - x_j(t)\| \geq 2 \cdot r_{\text{bounding}}
+\text{For all } a_i, a_j \in \mathcal{A}, a_i \neq a_j: \quad \|x_i(t) - x_j(t)\| \geq 2 \cdot r_{\text{bounding}} \label{eq:ch4_collision_clearance}
 \end{equation}
 
 where $r_{\text{bounding}}$ represents the conservative bounding radius circumscribing the rectangular physical footprint of the chassis.
 
 \subsubsection{Target Set Coverage Task Formulation}
 
-Let $\mathcal{T}_i(t) \subset \mathcal{P}$ denote the set of targets assigned to the robotic agent $a_i$ at time $t$. In particular, the multi-agent task allocation procedure should satisfy the following coverage constraints~\cite{xu2026energy}:
+Let $\mathcal{T}_i(t) \subset \mathcal{P}$ denote the set of targets assigned to the robotic agent $a_i$ at time $t$. In particular, the multi-agent task allocation procedure should satisfy the coverage and disjointness constraints in Equation~\eqref{eq:ch4_coverage_partition}~\cite{xu2026energy}:
 
 \begin{equation}
-\forall t: \bigcup_{i=1}^{3} \mathcal{T}_i(t) = \mathcal{P} \quad \text{and} \quad \mathcal{T}_i(t) \cap \mathcal{T}_j(t) = \emptyset \quad \forall i \neq j
+\forall t: \bigcup_{i=1}^{3} \mathcal{T}_i(t) = \mathcal{P} \quad \text{and} \quad \mathcal{T}_i(t) \cap \mathcal{T}_j(t) = \emptyset \quad \forall i \neq j \label{eq:ch4_coverage_partition}
 \end{equation}
 
 The mission is considered complete when all targets have been audited. In particular, the global mission completion time $T_{\text{audit}}$ should be minimized across all valid task allocations, representing the time when the last agent finishes its task queue and returns to its docking pose.
 
 The main challenge of the decentralized multi-agent coverage task is the absence of the master planner, which would coordinate the agents and resolve the spatial coordination conflicts described in Section~4.1.2. In particular, the agents should negotiate the access to the narrow aisle using the ad-hoc communication described in \texttt{waypoint\_sender.py}, resolving the spatial inter-agent assignment conflicts while following the constraints imposed by the inspection waypoints. Furthermore, in the case of a single agent failure, the surviving agents should be able to reconfigure the task allocation table to reassign the inspection targets of the failed robot \cite{gong2024resilient}.
 
-\subsubsection{Mobile Clustering for Dynamic Inventory Asset Grouping}
+\subsubsection{Mobile Clustering for Dynamic Inventory Asset Grouping}\label{sec:ch4_mobile_cluster}
 
 Dimensional configuration cost incurred by multi-agent task allocation is avoided by dynamically grouping the non-stationary inventory assets located in the logistics facility. Namely, particular mobile pallet entities, identified as \texttt{pallet\_box\_mobile}, \texttt{pallet\_box\-\_mobile\_0}, and \texttt{pallet\_box\_mobile\_1}, display extremely unstable positions in relation to the logistics process. To properly group these dynamic agents for the decentralized sweep protocol, the spatial parser utilizes an artificial clustering technique. The centroids of the detected mobile pallets are grouped to form one virtual object called \texttt{mobile\_cluster}.
 
@@ -233,7 +257,9 @@ in which case the agent is forced to perform an immediate physical stop and tran
 
 The decentralized nature of the multi-robot system imposes additional constraints on the compute architecture. In particular, each robot operates as an edge compute node, locally processing the sensor data and maintaining its own localization estimate. In particular, the namespace isolation procedure and the underlying ROS 2 peer-to-peer communication protocol described in Section~5.2 and Section~7.2 enable the edge-deployed autonomy stack to satisfy the decentralized coordination requirements.
 
-\section{UAV Proxy Paradigm: Justification for Z-Axis Simulation}
+\section{UAV Proxy Paradigm: Justification for Z-Axis Simulation}\label{sec:ch4_uav_proxy}
+
+Before proceeding to the argument below, the qualification to the following claim requires stating: the author is not asserting that the mechanism described in this work equips the TurtleBot3 Waffle platform with rotorcraft propulsion or any other form of physical flight capability, since similar facilities in warehouse settings perform orthogonal high-shelf viewing by employing a scissor-lift module, a fixed mast-mounted sensor column, or a pan-tilt camera head instead of free-flight capabilities \cite{tsiakas2024autonomous}, any of which could be used as a substitute for the mechanism under consideration. What follows is a heuristic that entirely abstracts away from the choice of mechanism, representing a time spent by a vertical-access module in repositioning as a fixed dwell superimposed on top of a planar $\text{SE}(2)$ motion as described in the original Chapter~\ref{cha:chapter2}, so that the contribution of the present work to the coordination, allocation, and fault recovery can be assessed independent from that choice. Section 4.3.3 will return to this qualification once the mathematical foundation for orthogonal viewing has been laid.
 
 Inspecting the cardboard surface of the storage unit requires the robotic agent to capture high-resolution images from a sufficient distance away while maintaining orthogonal vision on the target plane. In an industrial logistics warehouse, the storage units are placed on large-scale $1.8\text{ m} \times 3.0\text{ m} \times 6.0\text{ m}$ shelves, which extend vertically along the Z-axis:
 
@@ -299,13 +325,16 @@ During this time interval, the robot halts its horizontal motion (by setting the
 
 \subsection{Limitations of the UAV Proxy Paradigm}
 
-While the described approach allows the robotic agent to capture orthogonal images of the storage shelf without additional mechanical complexity, it fails to account for several practical effects:
+While the described approach indeed allows the robotic agent to capture orthogonal images of the storage shelf without incurring additional mechanical complexity, it does not account for a few practical effects:
 
 \begin{itemize}
-    \item Aerodynamic ground effects and wind patterns caused by the rotation of the rotor blades,
-    \item Increased battery drain due to the additional power consumption of the UAV motors.
+    \item Aerodynamic ground effects and wind created by the rotation of the rotor blades,
+    \item Additional battery drain from the increased power draw by the UAV motors,
+    \item The physical embodiment of the described vertical reach: a scissor-lift mechanism, a fixed-height sensor mast, or a pan-tilt camera on a fixed-height mast would have different degrees of mechanical complexity, space requirements, and control authority, which are outside the scope of this thesis (as stated in the beginning of this section and in Section~\ref{sec:ch1_scope}).
 \end{itemize}
+
+The paradigm described in this study can thus be seen as an abstraction that hides implementation-specific details from the robotic autonomy stack, be it a scissor-lift mechanism or a camera gimbal. The contributions of this thesis to the autonomy stack described in Chapters~\ref{cha:chapter5} through~\ref{cha:chapter8} are independent of the implementation and hold regardless of the choice of mechanism.
 
 \section{Simulation Environment Description}
 
-The simulation experiments were conducted in a GPU-accelerated environment hosted on the Windows Subsystem for Linux 2 (WSL2) with Ubuntu 24.04 LTS. In particular, ROS 2 Jazzy Jalisco and the Gazebo Harmonic simulation toolkit \cite{afzal2021gzscenic} with the Ogre2 rendering engine were used to accelerate the physics simulation and provide high-quality computer graphics. The GPU acceleration was enabled to maintain the Real-Time Factor of $\text{RTF} \approx 1.0$. The specifics of the graphics acceleration, window manager configuration, and user interface are engineering-level details beyond the scope of this research and are discussed in Section~7.1 and Section~7.4. In particular, minor timing inconsistencies introduced by the WSL2 hypervisor are accounted for in the fault detection threshold described in Section~6.1.
+The simulation experiments were carried out in a GPU-accelerated environment running on Windows Subsystem for Linux 2 (WSL2), which hosted Ubuntu 24.04 LTS. Specifically, ROS 2 Jazzy Jalisco and the Gazebo Harmonic simulation software \cite{afzal2021gzscenic} with the Ogre2 rendering engine were utilized for physics simulation acceleration and high-quality computer graphics, respectively. The GPU acceleration was necessary to attain the Real-Time Factor of $\text{RTF} \approx 1.0$. The specifics of graphics acceleration, window manager, and UI rendering fall outside the scope of this research and are detailed in Section~7.1 and Section~7.4. In particular, the timing anomalies introduced by the WSL2 hypervisor are relevant to the fault detection threshold, which is detailed in Section~6.1.

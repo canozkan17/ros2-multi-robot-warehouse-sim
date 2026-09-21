@@ -1,18 +1,21 @@
-\documentclass[bibtotoc,liststotoc,BCOR=5mm,DIV=12]{scrbook}
+\documentclass[bibtotoc,liststotoc,BCOR=5mm,DIV=12,open=right,cleardoublepage=empty]{scrbook}
 
 % Page margins setup (Geometry single call)
+% Note: In two-sided mode (scrbook), lmargin becomes 'inner margin' (binding edge) 
+% and rmargin becomes 'outer margin'.
 \usepackage[a4paper, lmargin=2cm, rmargin=4.0cm, tmargin=2.5cm, bmargin=3cm]{geometry}
 
 \usepackage[ngerman, english]{babel}
-\usepackage{bibgerm}            % German references
+\usepackage{cite}                 % IEEE numeric [1-3]
 \usepackage[T1]{fontenc}        % German characters
 \usepackage{graphicx}           % PNG, JPG, PDF support
 \usepackage{url}                % Format URLs
 \usepackage{listings, color}    % Source code formatting
-\usepackage{subfig}             % Subfigures
 \usepackage{scrlayer-scrpage}   % Header and footer line
 \usepackage{todonotes}
 \usepackage{lipsum}             % Filler text
+\usepackage{caption}
+\usepackage{subcaption}
 
 \usepackage{soul}
 \usepackage[acronym,toc]{glossaries}
@@ -23,9 +26,11 @@
 \usepackage{tabularx}           % Auto-wrapping tables
 \usepackage{booktabs}           % Professional table lines
 \usepackage{array}
-\newcolumntype{L}{>{\raggedright\arraybackslash}X} % Sola hizalı esnek X sütunu
+\newcolumntype{L}{>{\raggedright\arraybackslash}X} 
+\newcommand{\ttseq}[1]{\texttt{\seqsplit{#1}}}
+\usepackage{microtype}
+\newcommand{\ttcode}[1]{\texttt{\small#1}}
 
-\usepackage{listings}
 \usepackage{xcolor}
 
 \definecolor{codegreen}{rgb}{0,0.6,0}
@@ -79,30 +84,20 @@
 \begin{document}
 % ---------------------------------------------------------------
 \frontmatter
+    % \include otomatil olarak cleardoublepage çalıştırır.
+    % cleardoublepage=empty sayesinde aradaki boş sayfalar tamamen tertemiz çıkar.
     \include{./misc/titlepage}
-    \thispagestyle{empty}
-    \cleardoublepage
-    
     \include{./misc/self-assertion}
-    \thispagestyle{empty}
-    \cleardoublepage
-
     \include{./misc/abstract}
-    \thispagestyle{empty}
-    \cleardoublepage
-
     \include{./misc/abstract_de}
-    \thispagestyle{empty}
-
+    \include{./misc/dedications}
+    
     \tableofcontents
-    \thispagestyle{empty}
-
     \listoffigures
-    \thispagestyle{empty}
-
     \listoftables
-    \thispagestyle{empty}
-
+    
+    \include{./misc/notations}
+    
 % --------------------------------------------------------------
 \mainmatter
 
@@ -124,7 +119,7 @@
     \printglossary[title={Acronyms}, type=\acronymtype, toctitle=List of Acronyms]
     \printglossary[title=Special Terms, toctitle=List of terms]
 
-    \bibliographystyle{geralpha}
+    \bibliographystyle{IEEEtran}
     \bibliography{./bib/manual}
 
     \input{./misc/annex}
